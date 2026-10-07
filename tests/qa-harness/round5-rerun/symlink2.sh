@@ -1,10 +1,10 @@
 #!/bin/bash
 # 补充：符号链接数据目录下 fix_binary_arch / install_callback 是否正常
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 APP=/tmp/qa5/sbx/sym2/app                # 在 / 上（模拟 /var/apps/openp2p）
-REAL=/vol4/@appshare/octop-native/qa5-sym2-real   # 在 /vol4 上
+REAL=/path/to/qa5-sym2-real   # 在 /vol4 上
 chmod -R u+rwX "$APP" "$REAL" 2>/dev/null; rm -rf "$APP" "$REAL"
 mkdir -p "$APP/shares" "$APP/var" "$APP/target/bin" "$REAL"
 ln -sfn "$REAL" "$APP/shares/openp2p"

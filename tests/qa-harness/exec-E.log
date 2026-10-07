@@ -1,7 +1,7 @@
 =========== 证据绑定（T5）===========
-被测包: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk
-包 md5 : 6898fc7f073c0ab8699eee5299916aec
-执行时间: 2026-10-01 03:12:29
+被测包: /path/to/projects/fnos-openp2p/dist/openp2p_3.25.11-11_all.fpk
+包 md5 : 61738ca1c8ec27b1c7cfdb7ed1557a74
+执行时间: 2026-10-07 22:40:10
   mock 自检: armv8l (期望 armv8l)
 
 =========== TC-08d 架构映射动态验证（B6 · 脚本桩隔离）===========

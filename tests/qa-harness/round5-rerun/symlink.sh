@@ -1,12 +1,12 @@
 #!/bin/bash
-# 符号链接数据目录沙箱（真机形态：/var/apps/openp2p/shares/openp2p → /vol4/@appshare/openp2p）
+# 符号链接数据目录沙箱（真机形态：/var/apps/openp2p/shares/openp2p → /volN/@appshare/openp2p）
 # 关键点：两层落在**不同的文件系统**上（/ 与 /vol4），用来验证 tmp + mv 原子改名是否仍工作。
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 SRC="$WS/projects/fnos-openp2p/src/openp2p"
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 APP=/tmp/qa5/sbx/sym/app                       # 模拟 /var/apps/openp2p（在 / 上）
-REAL=/vol4/@appshare/octop-native/qa5-sym-real # 模拟 /vol4/@appshare/openp2p（在 /vol4 上）
+REAL=/path/to/qa5-sym-real # 模拟 /volN/@appshare/openp2p（在 /vol4 上）
 chmod -R u+rwX /tmp/qa5/sbx/sym "$REAL" 2>/dev/null; rm -rf /tmp/qa5/sbx/sym "$REAL"
 mkdir -p "$APP/shares" "$REAL" "$APP/var" "$APP/target/bin" "$APP/cmd" "$APP/ui"
 ln -s "$REAL" "$APP/shares/openp2p"

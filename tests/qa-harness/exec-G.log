@@ -1,5 +1,5 @@
-被测源码: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
-包 md5  : 6898fc7f073c0ab8699eee5299916aec（二进制来源）
+被测源码: /path/to/projects/fnos-openp2p/src/openp2p
+包 md5  : 61738ca1c8ec27b1c7cfdb7ed1557a74（二进制来源）
 
 =========== G0 前置确认：被测布局确实是符号链接形态 ===========
   [PASS] DATA_DIR（shares/openp2p）是符号链接
@@ -37,10 +37,10 @@
   [PASS] 无残留
 
 =========== G7 隔离性：不得认领/误杀另一份也叫 openp2p 的程序（B9） ===========
-  [PASS] 前置：另一份 openp2p 正在运行 (pid=473110)
+  [PASS] 前置：另一份 openp2p 正在运行 (pid=3874128)
   [PASS] 本应用未运行时 status 不被『同名进程』带成运行中
   [PASS] stop 未误杀另一份 openp2p（进程仍在）
-  [PASS] 前置：已造出 argv0 伪装进程 (pid=473521)
+  [PASS] 前置：已造出 argv0 伪装进程 (pid=3874560)
   [PASS] stop 未误杀 argv0 伪装进程（P2-4 已修）
 
 =========== G8 界面 running_pid 与 cmd/common 判据一致（界面不再自造一套） ===========

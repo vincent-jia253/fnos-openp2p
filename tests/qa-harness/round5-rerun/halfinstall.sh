@@ -1,7 +1,7 @@
 #!/bin/bash
 # 语义验证：install_callback 在"二进制已部署、设置写失败"时的半装状态与用户可见文案
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 R=/tmp/qa5/sbx/half
 chmod -R u+rwX "$R" 2>/dev/null; rm -rf "$R"; mkdir -p "$R/shares/openp2p" "$R/var" "$R/target/bin"

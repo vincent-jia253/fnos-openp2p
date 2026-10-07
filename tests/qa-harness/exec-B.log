@@ -3,17 +3,17 @@
   start rc=1
   status rc=3
   --- 日志 ---
-[2026-10-01 03:10:58] [openp2p] ❌ 安装包内缺少 x86_64 架构的二进制，且数据目录中也没有可用二进制
-[2026-10-01 03:10:58] [openp2p] ❌ 可执行文件不存在或不可执行: /tmp/qa-exec/shares/openp2p/openp2p
+[2026-10-07 22:38:33] [openp2p] ❌ 安装包内缺少 x86_64 架构的二进制，且数据目录中也没有可用二进制
+[2026-10-07 22:38:33] [openp2p] ❌ 可执行文件不存在或不可执行: /tmp/qa-exec/shares/openp2p/openp2p
   [PASS] 未启动任何进程
   [PASS] status rc=3
   [PASS] 日志有明确错误行
 =========== TC-11 二进制损坏 → start rc=1 且不静默 (R5,R1) ===========
-/tmp/qa-exec/cmd/main: line 67: 458488 Segmentation fault      "$BIN" -v > /dev/null 2>&1
+/tmp/qa-exec/cmd/main: line 67: 3858536 Segmentation fault      "$BIN" -v > /dev/null 2>&1
   start rc=1 （预期 1）
   --- 日志 ---
-[2026-10-01 03:10:59] [openp2p] ❌ 可执行文件无法运行（架构不匹配或文件损坏）: /tmp/qa-exec/shares/openp2p/openp2p
-[2026-10-01 03:10:59] [openp2p]    请卸载后重新安装本应用，或在应用界面点「修复」重新部署二进制。
+[2026-10-07 22:38:34] [openp2p] ❌ 可执行文件无法运行（架构不匹配或文件损坏）: /tmp/qa-exec/shares/openp2p/openp2p
+[2026-10-07 22:38:34] [openp2p]    请卸载后重新安装本应用，或在应用界面点「修复」重新部署二进制。
   [PASS] start rc=1
   [PASS] 无进程残留
   [PASS] 有『无法运行（架构不匹配或文件损坏）』提示
@@ -22,11 +22,11 @@
   install_callback rc=1
   二进制 md5 前=150c30a425f3f80582ae596bd474b18a 后=150c30a425f3f80582ae596bd474b18a
   --- 日志 ---
-[2026-10-01 03:11:04] [openp2p] ❌ 候选二进制无法运行（架构 x86_64），版本输出：空；保留原二进制
+[2026-10-07 22:38:38] [openp2p] ❌ 候选二进制无法运行（架构 x86_64），版本输出：空；保留原二进制
   [PASS] 未落盘替换（保留原可用二进制）
   [PASS] 服务仍可启动
 =========== TC-13 Token 不进命令行 (I5) ===========
-  /proc/459338/cmdline: /tmp/qa-exec/shares/openp2p/openp2p -node my-fnos -sharebandwidth 10 -serverhost api.openp2p.cn -serverport 27183 -loglevel 1 -installpath /tmp/qa-exec/shares/openp2p 
+  /proc/3859496/cmdline: /tmp/qa-exec/shares/openp2p/openp2p -node my-fnos -sharebandwidth 10 -serverhost api.openp2p.cn -serverport 27183 -loglevel 1 -installpath /tmp/qa-exec/shares/openp2p 
   ps: /tmp/qa-exec/shares/openp2p/openp2p -node my-fnos -sharebandwidth 10 -serverhost api.openp2p.cn -serverport 27183 -loglevel 1 -installpath /tmp/qa-exec/shares/openp2p
   [PASS] cmdline 不含 Token
   [PASS] ps 不含 Token
@@ -45,8 +45,8 @@
   start rc=0 （预期 0）
   status rc=0 （预期 0=运行中）
   --- 日志尾部 ---
-2026/10/01 03:11:18.233490 460280 INFO PublicIP:10.147.165.211
-[2026-10-01 03:11:20] [openp2p] ✅ 启动成功，pid=460280
+2026/10/07 22:38:53.117401 3860223 INFO PublicIP:192.0.2.11
+[2026-10-07 22:38:55] [openp2p] ✅ 启动成功，pid=3860223
   [PASS] 进程已启动（B8：不再因缺 Token 而卡住界面）
   [PASS] status rc=0（运行中）
   [PASS] 有用户可见提示『未配置 Token』
@@ -60,7 +60,7 @@
   [PASS] 旧 Token 已从 config.json 清除
 =========== TC-17 并发重复启动 → 幂等 (R7) ===========
   进程数=1 （预期 1）
-  app.pid=461090
+  app.pid=3860876
   [PASS] 三次 start 只产生 1 个进程（幂等）
   [PASS] app.pid 存在
 =========== TC-18 stop 干净 + 重复 stop (R6) ===========

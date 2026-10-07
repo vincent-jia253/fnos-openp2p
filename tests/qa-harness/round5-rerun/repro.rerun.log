@@ -1,5 +1,5 @@
 复现集运行时间：2026-09-30 19:17:29
-被测产物：/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-6_all.fpk
+被测产物：/path/to/projects/fnos-openp2p/dist/openp2p_3.25.11-6_all.fpk
   md5    = 8cfa038075a2cfd51b6a4cf96484562a
   sha256 = 3e5ddb4aef0e58dcca21fb2c6fab3ee88f61bbe0ba4c9e5e4f0639d4dbf04c2b
 

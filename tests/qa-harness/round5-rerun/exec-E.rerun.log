@@ -1,5 +1,5 @@
 =========== 证据绑定（T5）===========
-被测包: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk
+被测包: /path/to/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk
 包 md5 : 3608a54efe1b966d6e80e93195e815d1
 执行时间: 2026-09-30 19:15:20
   mock 自检: armv8l (期望 armv8l)

@@ -2,7 +2,25 @@
 # TC-08 跨架构补测：用 qemu-user-static 真正执行各架构二进制
 Q=/tmp/qemuget/x/usr/bin
 A=$(mktemp -d)
-tar xzf /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk -O app.tgz | tar xz -C "$A"
+# —— 路径自解析：谁 clone 下来都能跑 ——
+# 解析顺序：$OPENP2P_ROOT → 从脚本目录向上找含 src/openp2p 的目录 → 常见相对布局 → 从 $PWD 向上找
+find_root(){
+  local d c x
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"; [ -n "$d" ] || d="$PWD"
+  x="$d"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+  for c in "$d/../.." "$d/../../../../projects/fnos-openp2p" "$d/../../../../../projects/fnos-openp2p" "$PWD"; do
+    c="$(cd "$c" 2>/dev/null && pwd)"
+    [ -n "$c" ] && [ -d "$c/src/openp2p" ] && { printf %s "$c"; return 0; }
+  done
+  x="$PWD"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+}
+ROOT="${OPENP2P_ROOT:-$(find_root)}"
+[ -d "$ROOT/src/openp2p" ] || { echo "找不到项目根（含 src/openp2p）；可用 OPENP2P_ROOT=<项目路径> 指定" >&2; exit 1; }
+PKG="${PKG:-$(ls -t "$ROOT"/dist/*.fpk 2>/dev/null | head -n 1)}"
+[ -f "$PKG" ] || { echo "找不到安装包（$ROOT/dist/*.fpk），请先执行 ./build.sh" >&2; exit 1; }
+tar xzf "$PKG" -O app.tgz | tar xz -C "$A"
 cd "$A/bin" && chmod +x ./*
 echo "=== TC-08b 四架构二进制可执行性实测 ==="
 echo "（qemu-user-static 由 Debian 包免 root 解包：/tmp/qemuget/x/usr/bin）"

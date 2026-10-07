@@ -2,7 +2,7 @@
 # 独立断言：Token 不得出现在 日志 / 运行文件 / ps argv / config.json 以外的数据目录文件
 # 用法: token_leak.sh <cmd源码目录> <标签>
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 CMDSRC="$1"; TAG="$2"
 TOK=314159265358
@@ -14,7 +14,7 @@ cp -r "$CMDSRC/." "$R/cmd/"; chmod +x "$R"/cmd/* 2>/dev/null
 tar xzf "$PKG" -O app.tgz | tar xz -C "$R/target" --wildcards 'bin/openp2p_x86_64' 2>/dev/null
 mv "$R/target/bin/openp2p_x86_64" "$D/openp2p"; chmod +x "$D/openp2p"
 # ⚠️ 必须先固定 TRIM_APPNAME=openp2p 并 unset 其余 TRIM_*，否则 cmd/common 会算出
-#    /var/apps/octop-native 的路径（本机自带 TRIM_APPNAME=octop-native）。我第一次就踩了。
+#    /var/apps/appuser 的路径（本机自带 TRIM_APPNAME=appuser）。我第一次就踩了。
 export TRIM_APPNAME=openp2p OPENP2P_APPROOT="$R" TRIM_APPDEST="$R/target" TRIM_PKGVAR="$R/var"
 export LOG_FILE="$R/apps.log" TRIM_TEMP_LOGFILE="$R/install.err"
 # 用**产品代码**写入 settings.conf（而不是手写夹具），顺便验证它的权限

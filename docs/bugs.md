@@ -115,7 +115,7 @@ ERROR v4Listener listen 1025 error: listen tcp 0.0.0.0:1025: bind: address alrea
 | **B8** | **P0** | 无 Token 死锁：应用界面文案告知「可留空，装后再填」，但 `start` 在无 Token 时直接跳过启动 → 界面永远填不上 Token | `cmd/main` 把「无 Token」当作「不启动」；而 Token 只能从**启动后**的应用界面填写，构成互锁 | 预期：无 Token 也能启动并进界面 → 实际：永不启动 | `cmd/main` 无 Token 照常启动（仅日志提示不组网）；`cmd/common::ensure_token_in_conf` 允许空 Token 并写 `"Token": 0` 防旧值复活；`cmd/config_callback` 未运行时保存设置也自动拉起；`wizard/install` 文案改为「留空也可以，应用仍会正常启动」 | **已修复 · 块 F 16/16** |
 | **B9** | P1 | `find_pid` 兜底用 `pgrep -x openp2p` 且**不校验 exe**，可能认领/误杀另一份也叫 openp2p 的程序 | 按进程名匹配即采信 | 预期：只认本应用数据目录里的二进制 | `cmd/common::find_all_pids` 名字通道逐个用 `is_our_pid`（`/proc/<pid>/exe`）反查；`app/ui/index.cgi::running_pid` 删除自造的 `pidof openp2p` 兜底 | **已修复 · 块 G7** |
 | **B10** | P1 | `is_running` 只看 PID 文件：文件一丢即判「未运行」→ 重复起实例；`is_our_pid` 用 `kill -0` 判活，跨用户 EPERM 被误判为「已死」 | PID 文件被当成事实来源 | 预期：PID 文件只是缓存，须回退进程探测 | `is_running` PID 文件失败后回退 `find_pid` 并**自愈重建** PID 文件；`is_our_pid` 改用 `/proc` + 新增 `pid_alive`（解析 `/proc/<pid>/stat`，**zombie 视为已死**） | **已修复 · 块 G4** |
-| **B11** | **P0** | **真机根因**（**口径更正**：恒为假的是 `is_our_pid` → 由此 `is_running` 恒假，后果是 `start` 重复起实例；`status` 子命令在 `-1` 里另有 `find_pid` 兜底，通常仍能报「运行中」，并非「恒显示已停止」）：数据目录 `/var/apps/openp2p/shares/openp2p` 是指向 `/vol4/@appshare/openp2p` 的**符号链接**，而 `/proc/<pid>/exe` 给出**解析后的真实路径** → `is_our_pid` 字符串比较恒为假 → every `start` 都判「未运行」→ 重复实例互抢 1025 端口 | 用未规范化的路径与 `/proc/<pid>/exe` 做字符串相等比较 | 预期：能认出自己正在运行的进程 | `cmd/common::proc_exe_is_bin`：先 `readlink -f "$BIN"` 规范化再比（并容忍升级后的 ` (deleted)`），再补一道 `dev:inode` 校验兜底 | **已修复 · 块 G1/G2/G3** |
+| **B11** | **P0** | **真机根因**（**口径更正**：恒为假的是 `is_our_pid` → 由此 `is_running` 恒假，后果是 `start` 重复起实例；`status` 子命令在 `-1` 里另有 `find_pid` 兜底，通常仍能报「运行中」，并非「恒显示已停止」）：数据目录 `/var/apps/openp2p/shares/openp2p` 是指向 `/volN/@appshare/openp2p` 的**符号链接**，而 `/proc/<pid>/exe` 给出**解析后的真实路径** → `is_our_pid` 字符串比较恒为假 → every `start` 都判「未运行」→ 重复实例互抢 1025 端口 | 用未规范化的路径与 `/proc/<pid>/exe` 做字符串相等比较 | 预期：能认出自己正在运行的进程 | `cmd/common::proc_exe_is_bin`：先 `readlink -f "$BIN"` 规范化再比（并容忍升级后的 ` (deleted)`），再补一道 `dev:inode` 校验兜底 | **已修复 · 块 G1/G2/G3** |
 | **B12** | P1 | `stop` 只杀 `find_pid` 找到的**一个**进程；真机残留 2 个实例时只清掉一个，另一个继续占 1025 端口，用户以为「停了」 | 单 PID 假设 | 预期：清理全部本应用进程 | `cmd/main::stop_process` 收集 PID 文件 + `find_all_pids` 的**并集**，先全部 TERM 再统一等待，再 KILL 幸存者；仍存活则**如实返回 1** 并记录权限不足，不谎报成功 | **已修复 · 块 G5** |
 | **B13** | P1 | 升级后旧进程的 `/proc/<pid>/exe` 带 ` (deleted)` 后缀，新旧 inode 不同 → 可能认不出旧实例，导致升级后起第二个实例抢占端口 | 未容忍二进制替换场景 | 预期：升级后能认出并停掉旧实例 | `proc_exe_is_bin` 显式容忍 `"$cand (deleted)"` | **已修复 · 块 G6** |
 
@@ -142,7 +142,7 @@ ERROR v4Listener listen 1025 error: listen tcp 0.0.0.0:1025: bind: address alrea
   4. PID 文件丢失后 `status`/`start` 自愈（B10）
 - **历史结论归档**：`-1`（md5 `066146eb…`）与 `-2`（md5 `319db26d…`）**均不得再交付/使用**；`-1` 的「G3 通过」标记为**已被真机事实推翻**。
 
-## 真机处置建议（需 root，我以 octop-native 身份无权限执行）
+## 真机处置建议（需 root，我以 appuser 身份无权限执行）
 
 - 现存 root 实例 `2795664`、`2800553` 正每 5 秒刷 `bind 1025` 错误、持续膨胀 `/var/log/apps/openp2p.log`。
 - 升级到 `-3` 后，用应用界面「**停止**」→「**启动**」（或「重启」）即可由新逻辑**一次性清掉全部遗留实例**（B12）。
@@ -265,7 +265,7 @@ ERROR v4Listener listen 1025 error: listen tcp 0.0.0.0:1025: bind: address alrea
 |---|---|---|---|
 | **T13** | 断言脚本标题里用反引号包命令 | bash 当命令替换执行，**凭空创建了一个 0 字节文件 `file`**，标题被吞 | 标题不用反引号；删除杂散文件 |
 | **T14** | 助手函数把「标签行」打到 stdout，而调用方 `$(...)` 捕获 stdout | 零泄漏被读成有泄漏 —— **用例自己误报** | 标签行走 `>&2` |
-| **T15** | 直接 source `cmd/common` 却没覆盖 `TRIM_*` | 本机自带 `TRIM_APPNAME=octop-native` → `DATA_DIR` 指到别处、`BIN` 不存在，使 R4「拒绝认领」的结论被混淆 | 开头固定 `TRIM_APPNAME=openp2p` 并 unset 其余 `TRIM_*` |
+| **T15** | 直接 source `cmd/common` 却没覆盖 `TRIM_*` | 本机自带 `TRIM_APPNAME=appuser` → `DATA_DIR` 指到别处、`BIN` 不存在，使 R4「拒绝认领」的结论被混淆 | 开头固定 `TRIM_APPNAME=openp2p` 并 unset 其余 `TRIM_*` |
 | **T16** | 桩二进制写成无限循环，而 `cmd/main:84` 会先 `"$BIN" -v` 自检 | 复现集**挂死到 600 秒超时** | 桩先应答 `-v` 再 `exec sleep` |
 | **T17** | 桩 `exec sleep` 后 argv 被改写，`pgrep -f <被测路径>` 找不到 | "进程未起"的假失败 | 改用 `cmd/main` 既有语义（`rc=0` 即 `pid_alive` 通过）作断言 |
 | **T18** | `pkill -f '/tmp/repro-'` 的模式出现在自己的命令行里 | 把自己所在的 shell 一起杀掉（exit -15） | 先 `pgrep -af` 看清 PID 再按 PID 杀 |
@@ -381,7 +381,7 @@ QA 对 `-6` 的结论是**「有条件通过」**：功能面已收敛，但仍�
 QA 对 `-7` 的裁定：**有条件通过，阻塞项 0 条**。报告：`qa/qa-round5-review.md`
 （569 行，sha256 `8336f811bbf42c7df46fc767cf9210c6222583b6b4dbbe42a64a1a1601f08583`）。
 
-"条件"是**只能真机做**的那套验收（我以 `octop-native` 身份非 root，沙箱替代不了），
+"条件"是**只能真机做**的那套验收（我以 `appuser` 身份非 root，沙箱替代不了），
 清单已并入 `test-report.md` 顶部横幅与交付说明。
 
 ### QA 本轮独立做的事（不是只读我的结论）
@@ -407,7 +407,7 @@ QA 对 `-7` 的裁定：**有条件通过，阻塞项 0 条**。报告：`qa/qa-
 | **N5-3** | `install_callback:19/25`、`upgrade_callback:19/25` 用 `>`（**会截断** fnOS 先前写进进度文件的内容）且未抑制 stderr | 低（截断的是进度提示，不影响功能；文件不可写时会裸泄漏一行） | **登记待修**（`-8`：改 `>>` + `2>/dev/null`） |
 | **N5-4** | `save` 失败文案"应用未被改动"是**硬编码断言**而非按状态推导（当前控制流下成立，改顺序即成谎话） | 低（当前为真陈述） | **登记待修**（`-8`：改为按实际状态渲染文案，并把该文案纳入断言） |
 | **N5-5/N5-6** | 证据口径：`repro.sh` 横幅与 `repro.log` 首行仍写 `-6`（实际断言跑的是源码树 = `-7`） | 低（**证据归属**问题，易误读） | **登记待修**（`-8`：版本号从被拷源码的 `manifest` 推导，禁止硬编码） |
-| **§10-2 真机专属** | **本机 `/vol4/@appshare/` 这棵树上进程 umask 不生效**，新文件直接继承父目录权限（`/tmp`、`/vol4/@appdata` 正常）→ 含义：数据目录现在恰好是 **700** 所以不泄露，但 **P2-D 的 `umask 077` 在真机上并非权威机制**；一旦该目录变成 0755，含 Token 的临时文件会建成 755 | **中**（不是当前缺陷，是"我的修复在真机上可能不成立"的证据学问题） | ① 如实登记，**不外推**沙箱结论；② 交用户真机探测（见交付清单第 7 步：`umask 077; touch $R/.qa-probe; stat -c '%a'`）；③ `-8` 增加**显式 `chmod 700 "$DATA_DIR"`** 作为与 umask 无关的兜底 |
+| **§10-2 真机专属** | **本机 `/volN/@appshare/` 这棵树上进程 umask 不生效**，新文件直接继承父目录权限（`/tmp`、`/volN/@appdata` 正常）→ 含义：数据目录现在恰好是 **700** 所以不泄露，但 **P2-D 的 `umask 077` 在真机上并非权威机制**；一旦该目录变成 0755，含 Token 的临时文件会建成 755 | **中**（不是当前缺陷，是"我的修复在真机上可能不成立"的证据学问题） | ① 如实登记，**不外推**沙箱结论；② 交用户真机探测（见交付清单第 7 步：`umask 077; touch $R/.qa-probe; stat -c '%a'`）；③ `-8` 增加**显式 `chmod 700 "$DATA_DIR"`** 作为与 umask 无关的兜底 |
 
 ### QA 明确未能验证的项（其报告 §13，共 11 项）
 
@@ -435,7 +435,7 @@ i386 原生执行、跨 uid `is_our_pid`、ENOSPC 下 save/raw_save、以及清�
 | `/proc/<pid>/exe` | `cannot read symbolic link …: Permission denied` | 跨用户 EACCES，与设计预期一致（`proc_exe_is_bin` 已退化处理） |
 | PID 文件 | `/var/apps/openp2p/var/` → `/usr/local/apps/@appdata/openp2p`，**EACCES 读不到 `app.pid`** | 无法用旧逻辑判活 —— 正是 B10「只看 PID 文件」不可靠的现场 |
 | 我方操作日志 | `/var/log/apps/openp2p.log` = **0 字节**，mtime 17:00 | 启动时间线与 bind 报错的现场**已被清空**（非我清空，我无写权限） |
-| 数据目录 | `shares/openp2p -> /vol4/@appshare/openp2p`，`ls` → Permission denied | 载荷程序自己的日志/配置在里面 → **无法判断是否已组网在线** |
+| 数据目录 | `shares/openp2p -> /volN/@appshare/openp2p`，`ls` → Permission denied | 载荷程序自己的日志/配置在里面 → **无法判断是否已组网在线** |
 | 目录权限 | `/var/apps/openp2p/` 下 `config/`、`wizard/` 为 `drw-r--r--`（**0644，缺 x**） | 真机解包既有现象，登记备查（不影响我们的 cmd 逻辑） |
 
 **当时的结论**：`-1` 仍在机上、处于「两个残留实例互抢 1025」的病态；`-7` 未安装。
@@ -470,7 +470,7 @@ i386 原生执行、跨 uid `is_our_pid`、ENOSPC 下 save/raw_save、以及清�
 | **N5-3** | `install/upgrade_callback` 用 `>` 写进度文件（**会截断** fnOS 先前写进去的内容）且未抑制 stderr | 改 `2>/dev/null >>`（**先**抑制再开文件，遵 P2-1 的重定向顺序纪律） | H20：框架既有内容保留 + 机械变异对照组必须截断 |
 | **N5-4** | `save` 失败文案"应用未被改动"是**硬编码断言**，不是按状态推导 | 改为按 `was_running` 推导两种文案（"仍在运行" / "当前为停止状态"） | H21：未运行时文案含"停止状态"且**不含**"仍在运行" |
 | **N5-5/6** | 证据口径：`repro.sh` 横幅与 `repro.log` 首行仍写 `-6`（实际跑的是源码树=`-7`/`-8`） | 脚本内包名统一改为从变量取，随产物版本走 | `grep -c '3.25.11-6' repro.sh` = 0 |
-| **真机特有** | `/vol4/@appshare/` 这棵树上**进程 umask 不生效**，新文件继承父目录权限 → `umask 077` 在真机不是权威机制 | 新增 `ensure_data_dir()`：`mkdir` 后 `chmod go-rwx`（**只收紧、不放开**，不推翻运维设的 0500），`cmd/common` 4 处 + `index.cgi` 2 处落点全部改用它 | H21：0755 → 700 ✅；0500 保持不变 ✅；`-6` 对照组保持 755 |
+| **真机特有** | `/volN/@appshare/` 这棵树上**进程 umask 不生效**，新文件继承父目录权限 → `umask 077` 在真机不是权威机制 | 新增 `ensure_data_dir()`：`mkdir` 后 `chmod go-rwx`（**只收紧、不放开**，不推翻运维设的 0500），`cmd/common` 4 处 + `index.cgi` 2 处落点全部改用它 | H21：0755 → 700 ✅；0500 保持不变 ✅；`-6` 对照组保持 755 |
 
 ## 3. 本轮踩到的测试坑（新纪律）
 
@@ -511,7 +511,7 @@ i386 原生执行、跨 uid `is_our_pid`、ENOSPC 下 save/raw_save、以及清�
 
 ## 3. 本轮新增确证（我自己复测的法证事实）
 
-在 `/vol4/@appshare/` 树下（**我自己的子目录，非应用数据目录**）实测：`umask 077` 与 `umask 000` 下创建的文件/目录**权限一律等于父目录 700**；同样命令在 `/tmp` 下给出 `644`。
+在 `/volN/@appshare/` 树下（**我自己的子目录，非应用数据目录**）实测：`umask 077` 与 `umask 000` 下创建的文件/目录**权限一律等于父目录 700**；同样命令在 `/tmp` 下给出 `644`。
 → **该文件系统上进程 umask 不生效，新文件继承父目录权限**，这是 `-8` 引入 `ensure_data_dir`（`mkdir` + `chmod go-rwx`）的**直接依据**：
 只要目录是 700，新建的 `config.json` 就落成 700；一旦目录被放宽成 755，Token 就会以 755 落盘。因此"目录结构性收紧 + 创建后显式 chmod"两条都要。
 
@@ -567,7 +567,7 @@ i386 原生执行、跨 uid `is_our_pid`、ENOSPC 下 save/raw_save、以及清�
 
 - `ps -eo pid,user,etime,cmd` → **单实例** PID `405435`（root，已跑 35:45），argv 无 `-token`；仍是 `-7` 载荷。
 - `/var/apps/openp2p/manifest` → `version = 3.25.11-7`、`checksum = ad690f7bc19526db8022c23fe2969fa8`（= 我方 `md5(app.tgz)`），**与我手里的 `-7` 完全一致** → 用户装的确实是这一份。
-- **权限实测（真机）**：`/vol4/@appshare/openp2p` = **700**、`config.json` = **700**、`settings.conf` = **600**（都是 root 属主）。→ 目录收紧 + 创建即受限**在真机上成立**，Token 文件无同组/其他可读。
+- **权限实测（真机）**：`/volN/@appshare/openp2p` = **700**、`config.json` = **700**、`settings.conf` = **600**（都是 root 属主）。→ 目录收紧 + 创建即受限**在真机上成立**，Token 文件无同组/其他可读。
 - `uptime` 3 天 14:38、`last reboot` Sep 27 12:52 still running → **仍未整机重启过**。
 
 **尚未在真机验证**（继续挂在验收清单上）：
@@ -577,3 +577,58 @@ i386 原生执行、跨 uid `is_our_pid`、ENOSPC 下 save/raw_save、以及清�
 ④ 应用中心向导 UI 渲染与 platform=all 选包；
 ⑤ arm / armv8l / i386 真机执行；
 ⑥ `-8` 上机后的复测（预期与 `-7` 一致，仅多做 Token 卫生与会话留存）。
+
+---
+
+## 第十轮：可移植性阻塞项与第七轮评审处置（`-9` → `-10`）
+
+评审报告：`qa-portability-review.md`（B1/B2/B3）、`qa-round7-review.md`（B3' 与 N1–N10）。
+
+| 编号 | 问题（现象） | 触发条件 | 处置 | 回归证据 |
+|---|---|---|---|---|
+| **B1** | 卸载选「删除配置」实际没删：fnOS 把 `shares/<app>` 建成指向数据卷的**符号链接**，`rm -rf "$DATA_DIR"` 只删掉链接，`config.json`/`settings.conf` 的 Token 明文原封不动，日志却写"已删除配置" | 任何一次"删除配置"卸载 | `real_data_dir()`（`readlink -f`）+ `remove_data_dir()`（全项目唯一 `rm -rf`，白名单守卫 + 删完自检 + 如实报告） | `exec-I.log` I1a–I1f（对照组：Token 仍在数据卷上） |
+| **B2** | `config.json` 没有 `"Token"` 键时整文件覆盖 → 用户手写的 `apps[]`（端口转发规则）**静默清零**，而 README 承诺"不会覆盖 apps" | 用户手改过 `config.json` | 改为合并写入（只改 Token 字段）+ 改前备份 `config.json.bak`(0600) + 结构异常存 `.broken` 不覆盖 | `exec-I.log` I2a–I2f（对照组：`apps[]` 被清空） |
+| **B3** | `$TRIM_PKGVAR` 建不出来（系统盘满/只读/inode 耗尽）时启动锁 0.2 秒一轮死循环 → start/stop/界面无限挂起（rc=124，0 字节输出） | 运行时目录不可写 | 锁目录建不出来即快速失败返回 1 | `exec-I.log` I3a–I3c（对照组 rc=124） |
+| **B3'** | **第七轮评审发现**：B3 只修了一半——"锁目录**已存在**且删不掉"（只读挂载 EROFS / 挂载点 EBUSY / immutable）仍是**无 sleep 的忙等**：`rm` 失败后 `i=0; continue` 跳过了计时与 `sleep`，120 秒总时限永远累不到 | 锁目录超龄且文件系统拒绝 unlink | 只有"真删掉"才立即重试；删不掉则照常计入总时限并限频告警 | `exec-I.log` I4a–I4d：2 秒内 rc=1、日志 5 行；对照组（`-8`）`timeout` 12 秒 rc=124 |
+| **N1** | 仓库自带自测 `test/simulate-fnos.sh` 第 8 步断言过期（期望"没 Token 就不启动"，而 `-8` 起已改为照常启动）→ 陌生人跑自测会以为包坏了 | 任何人跑自测 | 断言改为与 B8 一致（清空 Token → `config.json.Token=0`、进程照起、日志提示） | `test/simulate-fnos.sh` 29 PASS / 0 FAIL |
+| **N2** | `tests/qa-harness/exec-*.sh` 硬编码 `/path/to/...` 与过期包名；`exec-I.sh` 根本不在仓库里 | 陌生人 clone | 全部脚本自解析项目根（`$OPENP2P_ROOT` 优先）+ 取 `dist/` 最新包；`exec-I.sh` 与两份对照组快照入库 | 块 I 在新路径下复跑 30/0 |
+| **N3** | README/VALIDATION 仍写 `-8`，仓库里查不到 `-9` 的哈希 | — | 版本号统一由 `build.sh` 的 `VERSION` 驱动；VALIDATION 登记 sha256/md5/size | 本文件与 `docs/VALIDATION.md` |
+| **N4** | 提交进仓库的日志残留内网 IP，与"已脱敏"声明自相矛盾 | — | 建立**脚本化脱敏**并带自检（工作区路径/主机名/内网 IP/应用内部 ID 全替换；脚本本身含真实值故不随仓库分发） | `docs/VALIDATION.md` §0 说明；自检输出 `✅ 干净` |
+| **N5** | `remove_data_dir` 白名单 `$APPDIR/*` 过宽：`shares/<app>` 若被指向 `$APPDIR/target`，会把**安装目录**一起删掉 | root 手动改过链接 | 收窄为精确形态 `$APPDIR/shares/<app>`（比对前两侧规范化） | I5a（对照组删掉了 `target/`） |
+| **N6** | `$APPDIR` 自身是符号链接时"删除配置"被误判为拒绝 → 静默变成"保留"（Token 留存） | 安装路径含符号链接 | 见 N5 的 `readlink -f` 规范化 | I5b（对照组留 Token） |
+| **N7** | `config.json` 是符号链接时被"脱链"成普通文件，原目标文件不再被更新 | 用户把配置指到别处 | 写前解析到链接目标再写 | I5c（对照组脱链） |
+| **N8** | `config.json` 合法但无 `network` 段时，原文件被移到 `.broken`、活动配置换成最小配置（未"覆盖"但"移出"了） | 罕见 | **保留行为**（不丢数据、有日志、有备份），改为在 README 里如实说明 | 文档口径 |
+| **N9** | 锁的"陈旧"只看 mtime：真正持有者只要超过 60 秒就会被夺锁（正好制造它要防的重复实例） | 持锁操作异常变慢 | 读 `${LOCK_DIR}/owner`，属主进程存活则绝不夺锁 | I5d（对照组夺锁 rc=0） |
+| **N10** | `$PKGVAR/.o2p.lock` 是普通文件时，start/stop 被**永久**挡住，只能人工删 | 异常残留 | 主动清理该文件；清不掉才快速失败 | I5e（对照组永久挡住） |
+
+**本轮新增测试**：块 I（`qa/exec-I.sh`，30 断言 / 0 失败），对照组来自冻结快照
+`legacy-8-cmd/`（B1/B2/B3/B3'）与 `legacy-9-cmd/`（N5–N10），每条断言都验证过"旧实现会失败"。
+
+**教训（写给下次）**：
+- 修"永不返回"这类缺陷时，**每个 `continue` 都要问一句它跳过了什么**——跳过计时就是死循环。
+- 白名单守卫要写成"精确形态匹配"，`$DIR/*` 这种前缀匹配在守卫场景里几乎总是过宽。
+- 断言要绑定**外部产物**（包、日志、哈希），不要绑定自己的叙述；本轮 N1 就是断言过期造成的自打脸。
+
+---
+
+## 第十一轮：定向复验 N11–N14 处置（`-10` → `-11`）
+
+复验报告：`qa-round7-review.md` 的复验节（`-10` 定向复验，报告见 `docs/qa-round7-review.md`
+同批产出的 `qa-round7b` 结论；裁定「有条件可以给陌生人用，**阻塞项 0 条**」）。
+
+| 编号 | 问题（现象） | 触发条件 | 处置 | 回归证据 |
+|---|---|---|---|---|
+| **N11** | 读锁属主用 `cat < "${LOCK_DIR}/owner"`：若该路径是 **FIFO / 字符设备（`/dev/zero`）/ 指向别处的符号链接**，`<` 重定向会**永久阻塞** → `start` 挂死（可达性：`mkdir` 结果受 umask 影响，锁目录可能被别人塞东西） | 锁目录可写且被塞特殊文件 | 读前先判 `[ -f "$f" ] && [ ! -L "$f" ]`；读取改为有界 `head -c 32 "$f" 2>/dev/null \| tr -dc '0-9'`；拿到锁后 `chmod go-rwx "$LOCK_DIR"` | `exec-I.log` I6a（对照组 rc=124 挂死） |
+| **N12** | N11 补丁引入的回归：`owner` 不存在时 stderr 泄漏 `${LOCK_DIR}/owner: No such file or directory`（97–200 B） | 首次获取锁 | `head -c 32 "$f" 2>/dev/null` —— **重定向必须在命令最前**，否则 `2>` 只作用于管道末端 | I6b（对照组 stderr 多出该行） |
+| **N13** | 测试注入点 `O2P_LOCK_MAX_TICKS` 填超长数字（> INT64_MAX）时 `[` 报 `integer expression expected` → 超时判据失效 → 永不返回，且每 0.2 秒刷一行错误 | 有人手动设了畸形环境变量 | 先校验位数（`[ ${#v} -le 4 ]`）再校验数值（`[ "$v" -le 600 ] 2>/dev/null`），不合法一律回落 600 | I6c（对照组 rc=124 + 海量 stderr） |
+| **N14** | `config.json` 是指向数据目录**之外**（如 `/tmp/x.json`）的符号链接时，Token 被写到数据目录外的文件里（"数据不出目录"承诺被绕过） | root 手动改过链接目标 | 解析真实路径后校验必须落在 `$(real_data_dir)/` 之内，否则拒绝写并记日志 | I6d（对照组把 Token 写到了 `/tmp`） |
+
+**本轮新增测试**：块 I 扩展至 **37 断言**（新增 I6a–I6d），对照组取自冻结快照 `legacy-10-cmd/`
+（`-10` 的 `cmd/*` 原样副本），每条都实测"旧实现会失败"。全套回归 **290 PASS / 0 FAIL**。
+
+**教训（写给下次）**：
+- 用 `<` 重定向读**任何路径**之前，先确认它是常规文件且不是符号链接——FIFO/设备文件会让 shell 永久阻塞。
+- `cmd 2>/dev/null | cmd2` 只抑制 `cmd2`；**重定向顺序**在管道里同样是纪律，不是风格。
+- 数字型注入点/配置项要先做**格式与量级**校验，再做数值比较；否则畸形输入会让判据本身失效（比不校验更糟）。
+- "写文件前解析符号链接"必须**同时**校验目标在允许范围内，否则解析等于给了逃逸通道。
+

@@ -165,7 +165,7 @@ is_our_pid() {
 #
 # 【真机根因 · 必读】不能拿 $BIN 直接和 /proc/<pid>/exe 做字符串比较。
 # 本应用 DATA_DIR 落在 /var/apps/<app>/shares/<app>，而该目录是指向
-# /vol4/@appshare/<app> 的符号链接，/proc/<pid>/exe 给出的却是【解析后的真实路径】，
+# /volN/@appshare/<app> 的符号链接，/proc/<pid>/exe 给出的却是【解析后的真实路径】，
 # 两者永远不相等。真机上因此 is_our_pid 恒为假，后果：
 #   - is_running 恒为假 → 每次 start 都判"未运行"→ 重复起进程
 #     （真机实测 12 秒起了 3 个，互相抢 1025 端口，日志每 5 秒刷 bind 错误）；

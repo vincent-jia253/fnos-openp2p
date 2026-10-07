@@ -6,7 +6,7 @@
 # 因此完全测不出真机那类「路径形态不一致」的缺陷 —— 而真机上 12 秒起了 3 个实例。
 #
 # B11【真机根因】DATA_DIR 落在 /var/apps/<app>/shares/<app>，而该目录是指向
-#   /vol4/@appshare/<app> 的**符号链接**；/proc/<pid>/exe 给出的是解析后的真实路径，
+#   /volN/@appshare/<app> 的**符号链接**；/proc/<pid>/exe 给出的是解析后的真实路径，
 #   与 $BIN 字符串永远不相等 → is_our_pid 恒为假：
 #     · status 永远显示"已停止"
 #     · 每次 start 都判"未运行" → 重复起实例（真机 12 秒 3 个，互抢 1025 端口）
@@ -18,10 +18,27 @@
 # B9【误杀风险】机器上可能有另一份也叫 openp2p 的程序，绝不能被我们认领/杀掉。
 #
 # 被测对象：**源码树**（打包前先验）
-SRC=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
-PKG=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk
+# —— 路径自解析：谁 clone 下来都能跑 ——
+# 解析顺序：$OPENP2P_ROOT → 从脚本目录向上找含 src/openp2p 的目录 → 常见相对布局 → 从 $PWD 向上找
+find_root(){
+  local d c x
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"; [ -n "$d" ] || d="$PWD"
+  x="$d"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+  for c in "$d/../.." "$d/../../../../projects/fnos-openp2p" "$d/../../../../../projects/fnos-openp2p" "$PWD"; do
+    c="$(cd "$c" 2>/dev/null && pwd)"
+    [ -n "$c" ] && [ -d "$c/src/openp2p" ] && { printf %s "$c"; return 0; }
+  done
+  x="$PWD"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+}
+ROOT="${OPENP2P_ROOT:-$(find_root)}"
+[ -d "$ROOT/src/openp2p" ] || { echo "找不到项目根（含 src/openp2p）；可用 OPENP2P_ROOT=<项目路径> 指定" >&2; exit 1; }
+PKG="${PKG:-$(ls -t "$ROOT"/dist/*.fpk 2>/dev/null | head -n 1)}"
+[ -f "$PKG" ] || { echo "找不到安装包（$ROOT/dist/*.fpk），请先执行 ./build.sh" >&2; exit 1; }
+SRC="$ROOT/src/openp2p"
 R=/tmp/qaG
-REAL=/tmp/qaG-realdata            # 符号链接指向的真实数据目录（模拟 /vol4/@appshare/openp2p）
+REAL=/tmp/qaG-realdata            # 符号链接指向的真实数据目录（模拟 /volN/@appshare/openp2p）
 DATA="$R/shares/openp2p"          # ← 真机形态：这是符号链接，不是真目录
 V="$R/var"
 OTHER=/tmp/qaG-other              # 冒充的"另一份 openp2p"

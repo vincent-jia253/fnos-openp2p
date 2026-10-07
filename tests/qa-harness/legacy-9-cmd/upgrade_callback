@@ -1,0 +1,31 @@
+#!/bin/bash
+### 升级完成后调用：重新落地架构二进制 + 保留既有设置
+### 说明：升级会再次把 app/bin/openp2p_<arch> 铺下来，需要重新改名自检；
+###       apply_settings_env 对未提供的字段保留原值，因此用户设置不会丢。
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SELF_DIR}/common" ]; then
+    # shellcheck source=common
+    . "${SELF_DIR}/common"
+else
+    # shellcheck source=/dev/null
+    . "/var/apps/openp2p/cmd/common"
+fi
+
+mkdir -p "$DATA_DIR" "$PKGVAR" 2>/dev/null
+
+if ! fix_binary_arch; then
+    echo "升级后二进制部署失败（当前架构 $(uname -m)）。详情见 ${LOG_FILE}" \
+        2>/dev/null >> "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
+    exit 1
+fi
+
+if ! apply_settings_env; then
+    # 同 install_callback：说清"哪一步成了、哪一步没成"（qa 第五轮指出）。
+    echo "升级后设置写入失败：${SETTINGS} 不可写（请检查存储空间与权限）。注意：程序文件已更新、原有设置未被改动；修正权限后请在应用中心点『修复』重试。详情见 ${LOG_FILE}" \
+        2>/dev/null >> "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
+    exit 1
+fi
+log_msg "升级完成：二进制已更新，设置已保留"
+
+exit 0

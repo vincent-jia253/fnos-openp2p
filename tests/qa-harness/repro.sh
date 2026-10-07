@@ -11,13 +11,28 @@
 # 用法：bash repro.sh          （输出同时写到 stdout 与 repro.log）
 # ============================================================
 cd "$(dirname "$0")" || exit 1
-ROOT=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p
+# —— 路径自解析：谁 clone 下来都能跑 ——
+# 解析顺序：$OPENP2P_ROOT → 从脚本目录向上找含 src/openp2p 的目录 → 常见相对布局 → 从 $PWD 向上找
+find_root(){
+  local d c x
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"; [ -n "$d" ] || d="$PWD"
+  x="$d"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+  for c in "$d/../.." "$d/../../../../projects/fnos-openp2p" "$d/../../../../../projects/fnos-openp2p" "$PWD"; do
+    c="$(cd "$c" 2>/dev/null && pwd)"
+    [ -n "$c" ] && [ -d "$c/src/openp2p" ] && { printf %s "$c"; return 0; }
+  done
+  x="$PWD"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+}
+ROOT="${OPENP2P_ROOT:-$(find_root)}"
+[ -d "$ROOT/src/openp2p" ] || { echo "找不到项目根（含 src/openp2p）；可用 OPENP2P_ROOT=<项目路径> 指定" >&2; exit 1; }
 SRC="$ROOT/src/openp2p"
 DIST="$ROOT/dist"
 QA="$(pwd)"
 T=/tmp/repro-$$; mkdir -p "$T" || exit 1
-# ⚠️ 本机（fnOS 上的 octop-native 应用）环境自带 TRIM_APPNAME/TRIM_APPDEST/TRIM_PKGVAR/
-# TRIM_TEMP_LOGFILE 等变量。若不清掉，cmd/common 会按"octop-native"算出 /var/apps/octop-native
+# ⚠️ 本机（fnOS 上的 appuser 应用）环境自带 TRIM_APPNAME/TRIM_APPDEST/TRIM_PKGVAR/
+# TRIM_TEMP_LOGFILE 等变量。若不清掉，cmd/common 会按"appuser"算出 /var/apps/appuser
 # 下的路径，用例就在错误的目录上得出结论（我在 R4 上真踩到了）。这里统一固定。
 export TRIM_APPNAME=openp2p
 unset TRIM_APPDEST TRIM_PKGVAR TRIM_TEMP_LOGFILE 2>/dev/null || true
@@ -189,7 +204,7 @@ ln -sfn "$R/real" "$R/link"                 # DATA_DIR 指向符号链接，正�
 (
   OPENP2P_APPROOT="$R"
   . "$SRC/cmd/common"
-  DATA_DIR="$R/link"                        # 真机 /var/apps/openp2p/shares/openp2p → /vol4/@appshare/openp2p
+  DATA_DIR="$R/link"                        # 真机 /var/apps/openp2p/shares/openp2p → /volN/@appshare/openp2p
   BIN="$DATA_DIR/openp2p"
   nohup "$BIN" 53 >/dev/null 2>&1 &
   P1=$!

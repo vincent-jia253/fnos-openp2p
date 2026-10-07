@@ -3,7 +3,24 @@
 # 设计要点：B6 的缺陷本体是 fix_binary_arch「选错文件」。
 #   自检 `$cand -v` 在 x86_64 宿主上无法 exec 真实 armv7 ELF（环境假象，非产品缺陷），
 #   故用「脚本桩」隔离"架构选择"逻辑做动态验证；真二进制可运行性由 E2 单独佐证。
-PKG=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk
+# —— 路径自解析：谁 clone 下来都能跑 ——
+# 解析顺序：$OPENP2P_ROOT → 从脚本目录向上找含 src/openp2p 的目录 → 常见相对布局 → 从 $PWD 向上找
+find_root(){
+  local d c x
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"; [ -n "$d" ] || d="$PWD"
+  x="$d"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+  for c in "$d/../.." "$d/../../../../projects/fnos-openp2p" "$d/../../../../../projects/fnos-openp2p" "$PWD"; do
+    c="$(cd "$c" 2>/dev/null && pwd)"
+    [ -n "$c" ] && [ -d "$c/src/openp2p" ] && { printf %s "$c"; return 0; }
+  done
+  x="$PWD"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+}
+ROOT="${OPENP2P_ROOT:-$(find_root)}"
+[ -d "$ROOT/src/openp2p" ] || { echo "找不到项目根（含 src/openp2p）；可用 OPENP2P_ROOT=<项目路径> 指定" >&2; exit 1; }
+PKG="${PKG:-$(ls -t "$ROOT"/dist/*.fpk 2>/dev/null | head -n 1)}"
+[ -f "$PKG" ] || { echo "找不到安装包（$ROOT/dist/*.fpk），请先执行 ./build.sh" >&2; exit 1; }
 Q=/tmp/qemuget/x/usr/bin
 R=/tmp/qae; DATA="$R/shares/openp2p"; V="$R/var"; MB="$R/mockbin"
 P=0; F=0

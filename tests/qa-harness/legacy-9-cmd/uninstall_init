@@ -1,0 +1,11 @@
+#!/bin/bash
+### 卸载前调用：确保应用已停止。
+###
+### 为什么显式停一次：fnOS 在 ctl_stop=true 时通常会先停应用，但文档措辞是「可能会」，
+### 并不构成保证。若卸载时进程仍在跑，它的可执行文件会被删掉（Linux 下进程不会立刻死），
+### 留下用户看不见的孤儿进程。main stop 是幂等的，未运行时返回 0，因此重复停没有代价。
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "${SELF_DIR}/main" ]; then
+    bash "${SELF_DIR}/main" stop >/dev/null 2>&1
+fi
+exit 0

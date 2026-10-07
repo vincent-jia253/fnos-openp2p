@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="3.25.11-8"
+VERSION="3.25.11-11"
 ARCH="all"
 SRC="src/openp2p"
 DIST="dist"

@@ -3,7 +3,7 @@
 # 用法：h14.sh <index.cgi 路径> <标签>
 set -u
 CGI_SRC="$1"; TAG="$2"
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 SRC="$WS/projects/fnos-openp2p/src/openp2p"
 R=/tmp/qa5/sbx/h14-$TAG

@@ -1,8 +1,8 @@
 =========== TC-01 启动常驻 + /proc/pid/exe 指向 DATA_DIR (R1,I1) ===========
   start rc=0
   status rc=0
-  pid=453605
-  /proc/453605/exe -> /tmp/qa-exec/shares/openp2p/openp2p
+  pid=3853371
+  /proc/3853371/exe -> /tmp/qa-exec/shares/openp2p/openp2p
   [PASS] 5秒后进程仍存活（常驻）
   [PASS] exe 指向 $DATA_DIR/openp2p（满足 I1）
 =========== TC-02 未运行 status=3 + 未知参数 rc=1 (R1,CLI) ===========
@@ -13,8 +13,8 @@
   [PASS] 打印 Usage
   [PASS] 两命令均未产生进程
 =========== TC-03 config.json/log 只在 DATA_DIR (I2) ===========
--rw------- 1 octop-native AppUsers 333 Oct  1 03:10 /tmp/qa-exec/shares/openp2p/config.json
-drwxr-xr-x 2 octop-native AppUsers 4096 Oct  1 03:10 /tmp/qa-exec/shares/openp2p/log
+-rw------- 1 appuser AppUsers 333 Oct  7 22:38 /tmp/qa-exec/shares/openp2p/config.json
+drwxr-xr-x 2 appuser AppUsers 4096 Oct  7 22:38 /tmp/qa-exec/shares/openp2p/log
   APPDEST 下 config.json: []
   [PASS] config.json 在 DATA_DIR
   [PASS] log/ 在 DATA_DIR
@@ -30,7 +30,7 @@ sharebandwidth=50
   [PASS] sharebandwidth 已更新为 50
   [PASS] 重启后 flags 生效且不丢
 =========== TC-05 settings.conf 权限 600 + 重启不丢 (R2,I4) ===========
-  权限/属主: 600 octop-native
+  权限/属主: 600 appuser
 token=12345678
   [PASS] settings.conf 权限 600
   [PASS] 重启后 Token 未丢
@@ -47,7 +47,7 @@ token=12345678
   已删除 $BIN
   重新展开安装包（模拟 fnOS『修复』）
   install_callback rc=0
--rwx--x--x 1 octop-native AppUsers 10371072 Oct  1 03:10 /tmp/qa-exec/shares/openp2p/openp2p
+-rwx--x--x 1 appuser AppUsers 10371072 Oct  7 22:38 /tmp/qa-exec/shares/openp2p/openp2p
   [PASS] 二进制重新落地 DATA_DIR
   [PASS] config.json 未被覆盖/重建
   [PASS] apps[] 保留
@@ -58,8 +58,8 @@ token=12345678
   [PASS] 二进制可运行且版本正确
 =========== TC-09 包内无本机架构二进制 + 已有可用二进制 → 沿用 (R5) ===========
   install_callback rc=0
-[2026-10-01 03:10:53] [openp2p] 包内无 openp2p_x86_64，沿用数据目录中已有二进制（3.25.11）
-[2026-10-01 03:10:53] [openp2p] 安装完成：设置已写入 /tmp/qa-exec/shares/openp2p/settings.conf
+[2026-10-07 22:38:28] [openp2p] 包内无 openp2p_x86_64，沿用数据目录中已有二进制（3.25.11）
+[2026-10-07 22:38:28] [openp2p] 安装完成：设置已写入 /tmp/qa-exec/shares/openp2p/settings.conf
   [PASS] 沿用旧二进制且 md5 不变
   [PASS] 日志有『沿用已有二进制』记录
   [PASS] 沿用后仍能正常启动

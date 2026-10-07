@@ -1,5 +1,5 @@
-被测源码: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
-包 md5  : 6898fc7f073c0ab8699eee5299916aec（二进制来源）
+被测源码: /path/to/projects/fnos-openp2p/src/openp2p
+包 md5  : 61738ca1c8ec27b1c7cfdb7ed1557a74（二进制来源）
 
 =========== H1 语法：index.cgi 必须是合法 bash ===========
   [PASS] bash -n 通过
@@ -29,7 +29,7 @@
 =========== H5 运行中保存设置：既要真重启，也要如实回报（缺陷 N6/T9③） ===========
   [harness] 负载二进制已铺：openp2p_x86_64 
   [PASS] 运行中保存 → 提示已自动重启
-  [PASS] 确实完成了重启且只有 1 个实例（旧 475629 → 新 476086）
+  [PASS] 确实完成了重启且只有 1 个实例（旧 3876561 → 新 3876949）
 
 =========== H6 停止按钮：停掉后必须报『已停止』且真的没进程；进程仍在时不得谎报（T9②/N6） ===========
   [harness] 清理上例残留进程
@@ -106,7 +106,7 @@
   [PASS] 前置成立：数据目录里没有现成二进制，逼 fix_binary_arch 真的去复制
   [PASS] 回调无 stderr 泄漏
   [PASS] 二进制部署失败时以非零退出（rc=1）
-  [PASS] 对照组：-6 版确实泄漏 cp/mv 裸错误（cp: cannot create regular file '/tmp/qaH/shares/openp2p/openp2p.new.481823': Permission denied）→ 证明本用例有鉴别力
+  [PASS] 对照组：-6 版确实泄漏 cp/mv 裸错误（cp: cannot create regular file '/tmp/qaH/shares/openp2p/openp2p.new.3882736': Permission denied）→ 证明本用例有鉴别力
 
 =========== H16 含 Token 的临时文件必须与进程 umask 无关地以 0600 创建（P2-D 同类 · 本轮自查新发现） ===========
   [harness] 负载二进制已铺：openp2p_x86_64 

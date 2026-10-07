@@ -3,8 +3,25 @@
 #   B8 = "无 Token 就不启动" 与 "界面提示可稍后填 Token" 互锁：
 #        界面要等应用启动后才可用，而应用却在等 Token → 用户永远填不上。
 # 被测对象：**源码树**（打包前先验，避免把 bug 打进包里）
-SRC=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
-PKG=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk
+# —— 路径自解析：谁 clone 下来都能跑 ——
+# 解析顺序：$OPENP2P_ROOT → 从脚本目录向上找含 src/openp2p 的目录 → 常见相对布局 → 从 $PWD 向上找
+find_root(){
+  local d c x
+  d="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"; [ -n "$d" ] || d="$PWD"
+  x="$d"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+  for c in "$d/../.." "$d/../../../../projects/fnos-openp2p" "$d/../../../../../projects/fnos-openp2p" "$PWD"; do
+    c="$(cd "$c" 2>/dev/null && pwd)"
+    [ -n "$c" ] && [ -d "$c/src/openp2p" ] && { printf %s "$c"; return 0; }
+  done
+  x="$PWD"
+  while [ "$x" != / ]; do [ -d "$x/src/openp2p" ] && { printf %s "$x"; return 0; }; x="$(dirname "$x")"; done
+}
+ROOT="${OPENP2P_ROOT:-$(find_root)}"
+[ -d "$ROOT/src/openp2p" ] || { echo "找不到项目根（含 src/openp2p）；可用 OPENP2P_ROOT=<项目路径> 指定" >&2; exit 1; }
+PKG="${PKG:-$(ls -t "$ROOT"/dist/*.fpk 2>/dev/null | head -n 1)}"
+[ -f "$PKG" ] || { echo "找不到安装包（$ROOT/dist/*.fpk），请先执行 ./build.sh" >&2; exit 1; }
+SRC="$ROOT/src/openp2p"
 R=/tmp/qaF; DATA="$R/shares/openp2p"; V="$R/var"
 P=0; F=0
 res(){ if [ "$2" = 1 ]; then P=$((P+1)); echo "  [PASS] $1"; else F=$((F+1)); echo "  [FAIL] $1"; fi; }

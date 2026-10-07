@@ -13,8 +13,8 @@
   [PASS] 打印 Usage
   [PASS] 两命令均未产生进程
 =========== TC-03 config.json/log 只在 DATA_DIR (I2) ===========
--rw------- 1 octop-native AppUsers 333 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/config.json
-drwxr-xr-x 2 octop-native AppUsers 4096 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/log
+-rw------- 1 appuser AppUsers 333 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/config.json
+drwxr-xr-x 2 appuser AppUsers 4096 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/log
   APPDEST 下 config.json: []
   [PASS] config.json 在 DATA_DIR
   [PASS] log/ 在 DATA_DIR
@@ -30,7 +30,7 @@ sharebandwidth=50
   [PASS] sharebandwidth 已更新为 50
   [PASS] 重启后 flags 生效且不丢
 =========== TC-05 settings.conf 权限 600 + 重启不丢 (R2,I4) ===========
-  权限/属主: 600 octop-native
+  权限/属主: 600 appuser
 token=12345678
   [PASS] settings.conf 权限 600
   [PASS] 重启后 Token 未丢
@@ -47,7 +47,7 @@ token=12345678
   已删除 $BIN
   重新展开安装包（模拟 fnOS『修复』）
   install_callback rc=0
--rwx--x--x 1 octop-native AppUsers 10371072 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/openp2p
+-rwx--x--x 1 appuser AppUsers 10371072 Sep 30 19:13 /tmp/qa-exec/shares/openp2p/openp2p
   [PASS] 二进制重新落地 DATA_DIR
   [PASS] config.json 未被覆盖/重建
   [PASS] apps[] 保留

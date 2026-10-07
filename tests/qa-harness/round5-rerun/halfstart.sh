@@ -3,7 +3,7 @@
 #   A) 无 config.json（全新安装失败后的状态）
 #   B) 有 config.json（从旧版升级失败后的状态，含旧 Token）
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 CMDSRC="$WS/projects/fnos-openp2p/src/openp2p/cmd"
 for MODE in A B; do

@@ -2,7 +2,7 @@
 # 独立 H15：数据目录不可写时，安装/升级回调的 fix_binary_arch 必须零字节泄漏
 # 用法: h15.sh <cmd目录> <标签>
 set -u
-WS=/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7
+WS=/path/to
 PKG="$WS/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk"
 CMDSRC="$1"; TAG="$2"
 R=/tmp/qa5/sbx/h15-$TAG

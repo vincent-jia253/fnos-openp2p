@@ -1,4 +1,4 @@
-被测源码: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
+被测源码: /path/to/projects/fnos-openp2p/src/openp2p
 包 md5  : 3608a54efe1b966d6e80e93195e815d1（二进制来源）
 
 =========== G0 前置确认：被测布局确实是符号链接形态 ===========

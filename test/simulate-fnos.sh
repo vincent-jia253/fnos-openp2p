@@ -3,8 +3,14 @@
 # 服务端指向 127.0.0.1:1，确保不访问真实 openp2p API
 set -u
 
-PROJ="/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p"
-FPK="$PROJ/dist/openp2p_3.25.11-1_all.fpk"
+# 路径按脚本自身位置推导（谁 clone 下来都能跑），产物取 dist/ 下最新的一份
+PROJ="$(cd "$(dirname "$0")/.." && pwd)"
+FPK="$(ls -t "$PROJ"/dist/*.fpk 2>/dev/null | head -n 1)"
+if [ -z "$FPK" ]; then
+    echo "❌ 没有找到 $PROJ/dist/*.fpk —— 请先执行 ./build.sh 构建安装包" >&2
+    exit 1
+fi
+echo "▶ 被测包：$FPK"
 SIM="/tmp/fnos-sim"
 ROOT="$SIM/var/apps/openp2p"
 DATA="$ROOT/shares/openp2p"
@@ -99,13 +105,18 @@ bash "$ROOT/cmd/main" status; rc=$?
 [ "$(nprocs)" = 0 ] && ok "无残留进程" || bad "残留进程数=$(nprocs)"
 
 echo
-echo "=== 8) 清空 Token 后应拒绝启动（settings.conf 为唯一权威）==="
+echo "=== 8) 未填 Token 时仍须正常启动（-8 起的行为：不登录组网，但界面必须进得去）==="
 sed -i 's/^token=.*/token=/' "$DATA/settings.conf"
 bash "$ROOT/cmd/main" start; rc=$?
 [ "$rc" = 0 ] && ok "start(no-token) 优雅返回 0" || bad "start(no-token) exit=$rc"
-bash "$ROOT/cmd/main" status; rc=$?
-[ "$rc" = 3 ] && ok "status=3（未运行，未被 config.json 旧 Token 复活）" || bad "status exit=$rc（旧 Token 复活了）"
-[ "$(nprocs)" = 0 ] && ok "确实没起进程" || bad "竟然起了进程（nprocs=$(nprocs)）"
+[ "$(nprocs)" = 1 ] && ok "未填 Token 也起了进程" \
+                     || bad "未填 Token 竟没起进程（nprocs=$(nprocs)）—— 那界面进不去，Token 就永远填不上"
+grep -q '尚未配置 Token' "$LOG_FILE" 2>/dev/null && ok "日志明确提示尚未配置 Token" \
+                                                 || bad "日志未提示 Token 状态"
+# 清空 Token 必须写进 config.json（否则"在界面上清空"会被旧值复活）
+grep -qE '"Token": *0' "$DATA/config.json" 2>/dev/null && ok "config.json 里的 Token 已被清为 0（旧值不复活）" \
+                                                       || bad "config.json 仍留着旧 Token"
+bash "$ROOT/cmd/main" stop >/dev/null 2>&1
 
 echo
 echo "=== 9) 重装/修复场景（数据目录已有二进制，包内 payload 已清空）==="

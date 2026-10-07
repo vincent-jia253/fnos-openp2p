@@ -1,0 +1,248 @@
+#!/bin/bash
+# openp2p fnOS 应用控制脚本
+#   main start   → 成功 0 / 失败 1
+#   main stop    → 成功 0 / 失败 1
+#   main status  → 运行中 0 / 未运行 3
+#
+# 设计要点（均为实测结论，勿改）：
+#   1. openp2p 从「可执行文件所在目录」解析 config.json 与 log/，
+#      既不是进程 CWD，-installpath 也不生效（已实测确认）
+#      → 所以二进制被部署到 DATA_DIR 并从这里运行，配置/日志天然落在持久目录，
+#        升级替换二进制时不会丢失用户配置
+#   2. 带 flags 启动不会冲掉 config.json 里用户自定义的 apps[]，只会合并 network 段
+#      → 设置以 flags 传入，config.json 归 openp2p 自己维护
+#   2b. Token 例外：它不走命令行（否则 ps 里能看到），而是写进 config.json 的 network.Token。
+#       实测不传 -token 时该值会被保留，其余 flags 照常覆盖。
+#   3. 不用 -d：单进程、PID 可控、stop 干净（-d 会派生子进程，易留孤儿）
+
+set -u
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SELF_DIR}/common" ]; then
+    # shellcheck source=common
+    . "${SELF_DIR}/common"
+else
+    # shellcheck source=/dev/null
+    . "/var/apps/openp2p/cmd/common"
+fi
+
+resolve_settings() {
+    if [ -f "$SETTINGS" ]; then
+        # settings.conf 存在 → 它是唯一权威来源。
+        # 刻意不回退到 config.json：否则「在界面上清空 Token」会被 config.json 里的旧值抵消，
+        # 用户会看到"明明清空了却还在跑"。
+        TOKEN=$(cfg_get token)
+        NODE=$(cfg_get node)
+        SB=$(cfg_get sharebandwidth)
+        SH=$(cfg_get serverhost)
+        SP=$(cfg_get serverport)
+        LL=$(cfg_get loglevel)
+    else
+        # 尚无 settings.conf（首次运行/用户直接手写 config.json）→ 尽量继承 openp2p 自己的配置
+        TOKEN=$(json_get Token)
+        NODE=$(json_get Node)
+        SB=$(json_get ShareBandwidth)
+        SH=$(json_get ServerHost)
+        SP=$(json_get ServerPort)
+        LL=$(json_get LogLevel)
+    fi
+
+    [ -n "$SB" ] || SB=10
+    [ -n "$SH" ] || SH="$DEFAULT_SERVERHOST"
+    [ -n "$SP" ] || SP="$DEFAULT_SERVERPORT"
+    [ -n "$LL" ] || LL=1
+
+    if [ -z "$NODE" ]; then
+        NODE=$(hostname 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-' | cut -c1-31)
+        [ -n "$NODE" ] || NODE="fnos-nas"
+    fi
+    # 兜底校验，避免非法值被传给 openp2p
+    safe_bw   "$SB" || { log_msg "⚠️ 共享带宽上限非法（${SB}），已回退为 10"; SB=10; }
+    safe_port "$SP" || { log_msg "⚠️ 服务端端口非法（${SP}），已回退为 ${DEFAULT_SERVERPORT}"; SP="$DEFAULT_SERVERPORT"; }
+    safe_num  "$LL" || LL=1
+    safe_host "$SH" || { log_msg "⚠️ 服务端地址非法（${SH}），已回退为 ${DEFAULT_SERVERHOST}"; SH="$DEFAULT_SERVERHOST"; }
+    safe_node "$NODE" || { log_msg "⚠️ 节点名非法（${NODE}），已回退为 fnos-nas"; NODE="fnos-nas"; }
+    case "$LL" in 0|1|2|3) ;; *) log_msg "⚠️ 日志级别非法（${LL}），已回退为 1"; LL=1 ;; esac
+}
+
+start_process() {
+    mkdir -p "$PKGVAR" 2>/dev/null
+    # 加锁：防止并发 start 各起一个进程（is_running 检查与写 PID 之间有竞态）
+    acquire_lock
+    trap 'release_lock' EXIT INT TERM HUP
+
+    if is_running; then
+        log_msg "已在运行 (pid $(head -n 1 "$PID_FILE" 2>/dev/null))，跳过启动"
+        return 0
+    fi
+    rm -f "$PID_FILE" 2>/dev/null
+    mkdir -p "$DATA_DIR" "$PKGVAR" "$(dirname "$LOG_FILE")" 2>/dev/null
+
+    [ -x "$BIN" ] || { log_msg "❌ 可执行文件不存在或不可执行: $BIN"; return 1; }
+
+    # 预检：能否真正执行。架构不匹配 / 文件损坏在这里就被拦下，
+    # 否则日志里会先冒出一行难懂的 "ELF: not found" 才轮到我们的提示。
+    if ! "$BIN" -v >/dev/null 2>&1; then
+        log_msg "❌ 可执行文件无法运行（架构不匹配或文件损坏）: $BIN"
+        log_msg "   请卸载后重新安装本应用，或在应用界面点「修复」重新部署二进制。"
+        return 1
+    fi
+
+    resolve_settings
+
+    # 【无 Token 也照常启动】—— 不要退回"没 Token 就不启动"
+    # 依据（真机实测）：openp2p 无 Token 时以 userNotFound 常驻，进程/界面/状态全部正常；
+    # 而"没 Token 就不启动"会造成死锁：Token 只能在启动后的应用界面里填 ——
+    # 用户在向导里按提示留空（"安装后再填"），装完应用不启动、界面进不去，
+    # 就永远填不上 Token。真机踩到过这个坑（缺陷 B8）。
+    if [ -z "$TOKEN" ] || [ "$TOKEN" = "0" ]; then
+        log_msg "⚠️ 尚未配置 Token：应用将启动但不会登录组网，请在应用界面填写 Token 后保存。"
+    fi
+
+    rotate_log
+
+    # Token 只写进 config.json，不走命令行 —— 命令行参数会暴露在 ps 里。
+    # 空 Token 也写（写 0），确保"清空 Token"时 config.json 里的旧值不会复活。
+    if ! ensure_token_in_conf "$TOKEN"; then
+        log_msg "❌ 无法把 Token 写入 ${CONF}，启动中止"
+        return 1
+    fi
+
+    log_msg "启动中：node=${NODE} server=${SH}:${SP} sharebandwidth=${SB} loglevel=${LL}"
+
+    cd "$DATA_DIR" 2>/dev/null || { log_msg "❌ 数据目录不可用: $DATA_DIR"; return 1; }
+
+    # 日志目标必须**先探测可写性**再交给 nohup：直接写 `>> "$LOG_FILE" 2>&1` 时，
+    # 一旦日志文件打不开（磁盘满 / 目录权限），bash 会抢在 `2>&1` 生效之前把
+    # 裸 "Permission denied" 打到调用方 stderr（应用中心 / CGI 的 web 错误日志），
+    # 而"启动失败"的真实原因反倒因为同一个文件不可写而丢失（qa 第四轮指出）。
+    log_target="$LOG_FILE"
+    if ! { : >> "$LOG_FILE"; } 2>/dev/null; then
+        log_msg "⚠️ 日志文件不可写（${LOG_FILE}），本次启动的进程输出将被丢弃"
+        log_target="/dev/null"
+    fi
+
+    nohup "$BIN" -node "$NODE" -sharebandwidth "$SB" \
+                 -serverhost "$SH" -serverport "$SP" -loglevel "$LL" \
+                 -installpath "$DATA_DIR" \
+          >> "$log_target" 2>&1 < /dev/null &
+    local pid=$!
+    { echo "$pid" > "$PID_FILE"; } 2>/dev/null
+    { date +%s > "$START_FILE"; } 2>/dev/null
+
+    sleep 2
+    # 用 pid_alive 而非 kill -0：本进程是我们 fork 的（同用户）其实 kill -0 可用，
+    # 但统一判据可避免 zombie 被当成"启动成功"（启动即崩会留下僵尸）
+    if pid_alive "$pid"; then
+        chmod 600 "$CONF" 2>/dev/null   # config.json 内含 Token，收紧权限
+        log_msg "✅ 启动成功，pid=${pid}"
+        return 0
+    fi
+
+    log_msg "❌ 启动失败（进程已退出），请查看日志：$LOG_FILE"
+    rm -f "$PID_FILE" "$START_FILE" 2>/dev/null
+    return 1
+}
+
+stop_process() {
+    mkdir -p "$PKGVAR" 2>/dev/null
+    # 与 start 同一把锁：避免 stop 与 start 交叉执行留下孤儿进程
+    acquire_lock
+    trap 'release_lock' EXIT INT TERM HUP
+
+    local pid p i n=0 survivor="" pids=""
+
+    # 1) PID 文件里的那个（若确实是我们自己的进程）
+    pid=$(head -n 1 "$PID_FILE" 2>/dev/null | tr -d '[:space:]')
+    if is_our_pid "$pid"; then
+        log_msg "停止中：pid=${pid}"
+        pids="$pids $pid"
+    elif [ -n "$pid" ]; then
+        # PID 文件指向的不是本应用（进程已退出、PID 被复用等）→ 绝不能 kill。
+        # 但要把「不是我们的」和「读不到信息」分开说：应用以 root 运行时，
+        # 非 root 调用者读 /proc/<pid>/exe、cmdline 会 EACCES，若笼统地说
+        # "PID 指向的不是本应用进程"，会把排查带偏（真机日志里出现过这句，实际 PID 是对的）。
+        if [ ! -d "/proc/$pid" ]; then
+            log_msg "⚠️ PID 文件里的 pid=${pid} 已不存在，仅清理 PID 文件"
+        elif [ -r "/proc/$pid/cmdline" ]; then
+            log_msg "⚠️ PID 文件指向的不是本应用进程（pid=${pid}），仅清理 PID 文件"
+        else
+            log_msg "⚠️ 读不到 pid=${pid} 的进程信息（权限不足，应用可能以 root 运行），无法确认归属；改由进程探测兜底"
+        fi
+    fi
+
+    # 2) 兜底：PID 文件缺失、失效，或此前重复启动留下了【多个】实例时，
+    #    按二进制路径/进程名找回【全部】本应用进程。
+    #    旧实现只取 find_pid 的第一个 —— 真机上曾同时残留 2 个实例，stop 只杀掉一个，
+    #    另一个继续占着 1025 端口刷 bind 错误，用户以为"停了"。必须全清。
+    #    find_all_pids 对名字通道做了 exe 校验，不会误伤别的安装的 openp2p。
+    for p in $(find_all_pids); do
+        case " $pids " in *" $p "*) continue ;; esac
+        pids="$pids $p"
+    done
+
+    if [ -z "${pids// /}" ]; then
+        rm -f "$PID_FILE" "$START_FILE" 2>/dev/null
+        log_msg "已停止（未发现运行中的进程）"
+        return 0
+    fi
+
+    for p in $pids; do n=$((n + 1)); done
+    [ "$n" -gt 1 ] && log_msg "发现 ${n} 个本应用进程（此前重复启动遗留），一并停止：${pids# }"
+
+    # 先全部发 TERM，再统一等待 —— 逐个串行等待最多会拖 N×10 秒
+    for p in $pids; do kill -TERM "$p" 2>/dev/null; done
+
+    i=0
+    while [ "$i" -lt 10 ]; do
+        survivor=""
+        for p in $pids; do pid_alive "$p" && survivor="$survivor $p"; done
+        [ -n "${survivor// /}" ] || break
+        sleep 1; i=$((i + 1))
+    done
+
+    if [ -n "${survivor// /}" ]; then
+        for p in $survivor; do
+            log_msg "优雅退出超时，强制结束 pid=${p}"
+            kill -KILL "$p" 2>/dev/null
+        done
+        sleep 1
+    fi
+
+    # 关键：不能谎报成功。应用以 root 运行时，非 root 调用者 kill 会 EPERM；
+    # 旧实现此时仍打印"已停止"，会误导排查（真实踩到过）。
+    survivor=""
+    for p in $pids; do pid_alive "$p" && survivor="$survivor $p"; done
+
+    if [ -n "${survivor// /}" ]; then
+        log_msg "❌ 未能停止进程：${survivor# }（多半是权限不足：应用以 root 运行，请从应用中心停止）"
+        { echo "${survivor# }" | awk '{print $1}' > "$PID_FILE"; } 2>/dev/null
+        return 1
+    fi
+
+    rm -f "$PID_FILE" "$START_FILE" 2>/dev/null
+    if [ "$n" -gt 1 ]; then log_msg "已停止（共 ${n} 个进程）"; else log_msg "已停止"; fi
+    return 0
+}
+
+status_process() {
+    if is_running; then
+        return 0
+    fi
+    # PID 文件失效但进程仍在 → 修复 PID 文件
+    local p
+    p=$(find_pid)
+    if [ -n "$p" ]; then
+        mkdir -p "$PKGVAR" 2>/dev/null
+        { echo "$p" > "$PID_FILE"; } 2>/dev/null
+        return 0
+    fi
+    rm -f "$PID_FILE" 2>/dev/null
+    return 3
+}
+
+case "${1:-}" in
+    start)  start_process ;;
+    stop)   stop_process ;;
+    status) status_process ;;
+    *)      echo "Usage: $0 {start|stop|status}" >&2; exit 1 ;;
+esac

@@ -6,7 +6,7 @@ chmod -R u+rwX "$R" 2>/dev/null; rm -rf "$R"; mkdir -p "$R/shares/openp2p"
 export TRIM_APPNAME=openp2p OPENP2P_APPROOT="$R" TRIM_APPDEST="$R/target" TRIM_PKGVAR="$R/var"
 export LOG_FILE="$R/apps.log"
 unset TRIM_TEMP_LOGFILE
-. /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p/cmd/common
+. /path/to/projects/fnos-openp2p/src/openp2p/cmd/common
 echo "被测 CONF=$CONF"
 (
   umask 000

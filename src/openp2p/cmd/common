@@ -21,9 +21,10 @@ DEFAULT_SERVERHOST="api.openp2p.cn"
 DEFAULT_SERVERPORT="27183"
 
 # 数据目录的"结构性"保护（`-8`，回应 qa 第五轮的真机发现）。
-# 为什么不能只靠 umask：真机实测 **/vol4/@appshare 这棵树上进程 umask 不生效**，
-# 新建文件直接继承父目录权限。也就是说"用 umask 077 建含 Token 的临时文件"在真机上
-# 不是权威机制 —— 如果目录本身是 0755，临时文件就会对他人可读。
+# 为什么不能只靠 umask：真机实测 **fnOS 的数据卷挂载点（`@appshare`，随机型可能是
+# /vol1、/vol2 … 为前缀）上进程 umask 不生效**，新建文件直接继承父目录权限。
+# 也就是说"用 umask 077 建含 Token 的临时文件"在真机上不是权威机制 ——
+# 如果目录本身是 0755，临时文件就会对他人可读。
 # 所以：把目录上的 **组/其他人权限一律摘掉**（go-rwx），让"权限窗口"在结构上不可能发生。
 #
 # 注意用 `chmod go-rwx` 而不是 `chmod 700`：前者**只收紧、绝不放开**。
@@ -32,6 +33,55 @@ DEFAULT_SERVERPORT="27183"
 ensure_data_dir() {
     mkdir -p "$DATA_DIR" 2>/dev/null
     chmod go-rwx "$DATA_DIR" 2>/dev/null
+    return 0
+}
+
+# 数据目录的**真实**位置。
+# fnOS 会按包内 config/resource 声明的 data-share 把数据目录建成**符号链接**：
+#     /var/apps/<app>/shares/<app>  ->  /volN/@appshare/<app>
+# 所以对 "$DATA_DIR" 直接 rm -rf 只会删掉那个链接，数据（含 Token）原封不动留在数据卷上
+# —— 卸载选"删除配置"时这是个会骗人的实现（qa 第六轮 B1 实测）。
+real_data_dir() {
+    local real
+    real="$(readlink -f "$DATA_DIR" 2>/dev/null)"
+    [ -n "$real" ] || real="$DATA_DIR"
+    printf '%s\n' "$real"
+}
+
+# 删除数据目录（连带符号链接指向的真实目录），**删干净才返回 0**。
+# 这是全项目唯一的 rm -rf，所以白名单要说清楚"允许删什么"，其余一律拒绝：
+#   1) 本应用数据目录的规范形态 $APPDIR/shares/<app>（精确匹配，**不是** $APPDIR/*：
+#      否则 $APPDIR 下任何子目录——包括 target/ 安装目录——都能被删，qa 第七轮 N5）
+#   2) 数据卷上以本应用名结尾的目录（…/@appshare/<app> 或 …/@appdata/<app>）
+# 比对前两侧都做 readlink -f 规范化，否则 $APPDIR 自身是符号链接时会误判为"拒绝"（N6）。
+# 宁可留着数据，也不能误删用户别的东西。
+remove_data_dir() {
+    local real root realroot
+    real="$(real_data_dir)"
+    realroot="$(cd "$APPDIR" 2>/dev/null && pwd -P)"   # $APPDIR 可能是符号链接，取物理路径
+    root="${realroot:=$APPDIR}"
+
+    case "$real" in
+        ''|/|/var|/usr|/vol|/volume*|*/@appshare|*/@appdata|*/@appshare/*/*|*/@appdata/*/*)
+            log_msg "❌ 拒绝删除数据目录（路径过于宽泛，不在白名单内）：${real}"
+            return 1
+            ;;
+    esac
+    case "$real" in
+        "${root}/shares/${APPNAME}") ;;
+        */@appshare/"${APPNAME}"|*/@appdata/"${APPNAME}") ;;
+        *)
+            log_msg "❌ 拒绝删除数据目录（路径形态与 ${APPNAME} 不符）：${real}"
+            return 1
+            ;;
+    esac
+
+    rm -rf "$real" 2>/dev/null
+    rm -f "$DATA_DIR" 2>/dev/null          # 顺手清掉可能残留（现在已悬空）的符号链接
+    if [ -e "$real" ] || [ -e "$DATA_DIR" ]; then
+        log_msg "❌ 数据目录未能完全删除：$real（可能只读、磁盘满或权限不足）"
+        return 1
+    fi
     return 0
 }
 
@@ -179,8 +229,9 @@ is_our_pid() {
 # /proc/<pid>/exe 是否指向【本应用的二进制】。
 #
 # 【真机根因 · 必读】不能拿 $BIN 直接和 /proc/<pid>/exe 做字符串比较。
-# 本应用 DATA_DIR 落在 /var/apps/<app>/shares/<app>，而该目录是指向
-# /vol4/@appshare/<app> 的符号链接，/proc/<pid>/exe 给出的却是【解析后的真实路径】，
+# 本应用 DATA_DIR 落在 /var/apps/<app>/shares/<app>，而该目录是指向数据卷
+# （`@appshare`，形如 /volN/@appshare/<app>）的符号链接，
+# /proc/<pid>/exe 给出的却是【解析后的真实路径】，
 # 两者永远不相等。真机上因此 is_our_pid 恒为假，后果：
 #   - is_running 恒为假 → 每次 start 都判"未运行"→ 重复起进程
 #     （真机实测 12 秒起了 3 个，互相抢 1025 端口，日志每 5 秒刷 bind 错误）；
@@ -259,6 +310,25 @@ safe_host() { case "$1" in ''|*[!A-Za-z0-9.-]*) return 1 ;; *) return 0 ;; esac;
 #     "Token": 123456789  → 解析成功
 #     "Token": "123456789" → 被解析成 0（登录失败）
 #   所以清空 Token 必须写 0（不能写空串，那会变成非法 JSON，也会让旧 Token 复活）。
+# JSON 合法性校验：改写用户文件前必须能自证"改完还是合法 JSON"。
+# fnOS 自带 python3；为了不在缺解释器时把功能判死，这里分两级：
+#   有 python3 → 真解析；没有 → 结构性基本检查（首字符 { 、末字符 } ）。
+json_ok() {
+    local f="$1"
+    [ -s "$f" ] || return 1
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import json,sys
+try:
+    json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)' "$f" 2>/dev/null && return 0
+        return 1
+    fi
+    head -c 1 "$f" 2>/dev/null | grep -q '{' || return 1
+    tail -c 1 "$f" 2>/dev/null | grep -q '}' || return 1
+    return 0
+}
+
 ensure_token_in_conf() {
     local tok="$1"
     case "$tok" in
@@ -267,15 +337,72 @@ ensure_token_in_conf() {
     esac
     ensure_data_dir
 
-    if [ -f "$CONF" ] && grep -q '"Token"' "$CONF" 2>/dev/null; then
-        sed -i "s/\"Token\"[[:space:]]*:[[:space:]]*\"\{0,1\}[0-9]*\"\{0,1\}/\"Token\": ${tok}/" "$CONF" 2>/dev/null
-        grep -q "\"Token\": ${tok}" "$CONF" 2>/dev/null || return 1
-    else
-        # 冷启动（或用户把 config.json 改坏了）：写最小配置，
-        # openp2p 会用 flags 补齐其余字段并回写完整结构
+    # 用户可能把 config.json 做成**符号链接**（例如指到别处的配置副本）。直接 `>` / `mv`
+    # 会把这个链接换成普通文件、原目标静默不再更新（qa 第七轮 N7）→
+    # 先规范化到链接目标上写，保证"写的就是用户真正在用的那份文件"。
+    # 这里用 local 遮蔽全局 CONF：本函数之后的所有读写都针对解析后的真实文件。
+    local CONF="$CONF"
+    if [ -L "$CONF" ]; then
+        local realconf
+        realconf="$(readlink -f "$CONF" 2>/dev/null)"
+        if [ -n "$realconf" ]; then
+            # 只允许写到**本应用数据目录内部**。否则等于把 Token 写到数据目录之外：
+            # qa 第七轮 b 的 N14 实测"链接指到 /tmp"会在 /tmp 新建一个带 Token 的文件，
+            # 且卸载"删除配置"也不会去清它。这类链接不是本应用的合法配置，宁可不写。
+            case "$realconf" in
+                "$(real_data_dir)"/*) CONF="$realconf" ;;
+                *)
+                    log_msg "❌ ${CONF} 是指向数据目录之外的符号链接（${realconf}），拒绝改写"
+                    return 1
+                    ;;
+            esac
+        fi
+    fi
+    local tmp="${CONF}.tmp.$$"
+
+    if [ ! -f "$CONF" ]; then
+        # 冷启动：写最小配置，openp2p 会用 flags 补齐其余字段并回写完整结构。
         # P2-D 同类：这份文件里有 Token，必须**一创建就是 0600**，
         # 不能等下面的 chmod（那之间有一个按进程 umask 建成的窗口）。
         ( umask 077; printf '{"network":{"Token":%s}}\n' "$tok" > "$CONF" ) 2>/dev/null || return 1
+        chmod 600 "$CONF" 2>/dev/null   # 含 Token，仅属主可读
+        return 0
+    fi
+
+    # ---- 以下分支都会改写用户已有的文件，先备份 ----
+    # 备份同样含 Token，必须 0600。注意本机实测：该文件系统上 `cp` 会把 600 放宽成
+    # 755（不能指望 cp 继承源权限），所以 cp 之后显式 chmod。
+    if cp -f "$CONF" "${CONF}.bak" 2>/dev/null; then
+        chmod 600 "${CONF}.bak" 2>/dev/null
+    fi
+
+    rm -f "$tmp" 2>/dev/null
+    if grep -q '"Token"' "$CONF" 2>/dev/null; then
+        ( umask 077; sed "s/\"Token\"[[:space:]]*:[[:space:]]*\"\{0,1\}[0-9]*\"\{0,1\}/\"Token\": ${tok}/" "$CONF" > "$tmp" ) 2>/dev/null
+    elif grep -q '"network"[[:space:]]*:[[:space:]]*{' "$CONF" 2>/dev/null; then
+        # 有 network 段但【没有 Token 键】：只把 Token 插进去，绝不重写整个文件。
+        # 旧实现在这种情况下走"整文件覆盖"，会把用户手写的 apps[]（端口转发规则）
+        # 静默清零 —— 而 README 明确鼓励用户手改 config.json 并承诺"不会覆盖 apps"，
+        # 这个组合就是数据丢失（qa 第六轮 B2）。
+        ( umask 077; sed "0,/\"network\"[[:space:]]*:[[:space:]]*{/s//\"network\": {\"Token\": ${tok},/" "$CONF" > "$tmp" ) 2>/dev/null
+    else
+        # 连 network 段都没有（被改坏 / 别的工具写的）：**不覆盖**，
+        # 原文件改名保留，另写最小配置，并把这件事说出来。
+        if mv -f "$CONF" "${CONF}.broken" 2>/dev/null; then
+            ( umask 077; printf '{"network":{"Token":%s}}\n' "$tok" > "$CONF" ) 2>/dev/null || return 1
+            chmod 600 "$CONF" 2>/dev/null
+            log_msg "⚠️ ${CONF} 结构异常（无 network 段），原文件已保留为 ${CONF}.broken"
+            return 0
+        fi
+        return 1
+    fi
+
+    if [ -s "$tmp" ] && grep -q "\"Token\": ${tok}" "$tmp" 2>/dev/null && json_ok "$tmp"; then
+        mv -f "$tmp" "$CONF" 2>/dev/null || { rm -f "$tmp" 2>/dev/null; return 1; }
+    else
+        rm -f "$tmp" 2>/dev/null
+        log_msg "❌ 改写 ${CONF} 失败（结果不是合法 JSON 或未写入 Token），原文件保持不变"
+        return 1
     fi
     chmod 600 "$CONF" 2>/dev/null   # 含 Token，仅属主可读
     return 0
@@ -288,21 +415,92 @@ ensure_token_in_conf() {
 LOCK_DIR="${PKGVAR}/.o2p.lock"
 
 acquire_lock() {
-    local i=0
+    # 最多等 120 秒（600 × 0.2s）。
+    # O2P_LOCK_MAX_TICKS 只是给测试用的注入点（把等待缩到秒级才能断言"会返回"），
+    # 非数字或为空时一律回落 600，正常使用无需关心。
+    local max_ticks="${O2P_LOCK_MAX_TICKS:-600}"
+    case "$max_ticks" in ''|*[!0-9]*) max_ticks=600 ;; esac
+    # 超长数字会让 `[ -ge ]` 报 "integer expression expected"（返回非 0 但**判据失效**），
+    # 于是超时那句 return 1 永远不会被执行 → 又变成永不返回（qa 第七轮 b 的 N13）。
+    # 先按长度挡掉变态值，再按语义夹上界（本变量的用途只是把等待缩短，不需要放大）。
+    [ "${#max_ticks}" -le 4 ] || max_ticks=600
+    [ "$max_ticks" -le 600 ] 2>/dev/null || max_ticks=600
+    local i=0 waited=0
     while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-        i=$((i + 1))
-        if [ "$i" -ge 50 ]; then
-            # 持有者可能已崩溃 → 超过 60 秒的锁视为陈旧，强制接管
-            local age
-            age=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
-            if [ "$age" -gt 60 ]; then
-                log_msg "⚠️ 清理陈旧启动锁（已存在 ${age} 秒）"
-                rm -rf "$LOCK_DIR" 2>/dev/null
+        # mkdir 失败有两种**完全不同**的原因，必须分开处理：
+        #   A) 锁已被别人持有（正常竞争）→ 该等，超时可接管陈旧锁
+        #   B) 父目录不可用（不存在 / 只读 / 磁盘满 / inode 耗尽）→ 等一万年也没用
+        # 旧实现把 B 也当成 A：stat 失败被当成"epoch 0 = 存在 17 亿秒的陈旧锁"，
+        # 清理又必然失败，计数器被归零 → 0.2 秒一轮死循环，CLI 与界面一起挂死
+        # （qa 第六轮 B3 实测：rc=124、0 字节输出、日志只有一行错话）。
+        if [ ! -d "$LOCK_DIR" ]; then
+            # C) 同名路径存在但**不是目录**（被别的东西占用）：mkdir 永远失败，
+            #    要主动清掉，否则 start/stop 会被永久挡住、只能人工删（qa 第七轮 N10）。
+            #    清不掉就落到下面的快速失败，一切照旧有明确结局。
+            if [ -e "$LOCK_DIR" ]; then
+                if rm -f "$LOCK_DIR" 2>/dev/null && [ ! -e "$LOCK_DIR" ]; then
+                    log_msg "⚠️ 启动锁路径被普通文件占用，已清理：${LOCK_DIR}"
+                    # 故意不 continue：走下面的计时 + sleep，避免"删了又出现"变成忙等
+                else
+                    log_msg "❌ 无法创建运行时锁目录（父目录不可写、磁盘满或只读）：${LOCK_DIR}"
+                    return 1
+                fi
+            else
+                log_msg "❌ 无法创建运行时锁目录（父目录不可写、磁盘满或只读）：${LOCK_DIR}"
+                return 1
             fi
-            i=0
+        fi
+        if [ "$((i % 5))" -eq 0 ]; then
+            local mtime age
+            # 只有 **stat 成功且确实超龄** 才允许清理；stat 失败不是"陈旧"，是异常
+            if mtime=$(stat -c %Y "$LOCK_DIR" 2>/dev/null); then
+                age=$(( $(date +%s) - mtime ))
+                if [ "$age" -gt 60 ]; then
+                    local owner=""
+                    # 读属主必须**有界**：`cat < FIFO`、`< /dev/zero`、`< 悬空链接` 都会永久阻塞，
+                    # 那会把 start/stop 一起拖死（qa 第七轮 b 的 N11：rc=124）。
+                    # 所以只认"锁目录里、非符号链接的**普通文件**"，且最多读 32 字节。
+                    # 另外 `2>/dev/null` 必须写在文件名之后、作为命令的参数重定向——
+                    # 写成 `tr … < "$f" 2>/dev/null` 时，`<` 先失败会把错误吐到 stderr（N12）。
+                    if [ -f "${LOCK_DIR}/owner" ] && [ ! -L "${LOCK_DIR}/owner" ]; then
+                        owner="$(head -c 32 "${LOCK_DIR}/owner" 2>/dev/null | tr -dc '0-9')"
+                    fi
+                    # 锁的属主进程**还活着**时绝不夺锁：那正好制造出锁要防的"重复实例"
+                    # （持锁方可能只是慢，比如 $BIN -v 卡住；qa 第七轮 N9）。
+                    # 只有"无属主记录"或"属主已死"才允许按超龄清理。
+                    if [ -n "$owner" ] && pid_alive "$owner"; then
+                        [ "$((i % 25))" -eq 0 ] \
+                            && log_msg "⚠️ 启动锁由活进程 ${owner} 持有（已 ${age} 秒），继续等待"
+                    else
+                        log_msg "⚠️ 清理陈旧启动锁（已存在 ${age} 秒）"
+                        rm -rf "$LOCK_DIR" 2>/dev/null
+                        # 清理**成功**才值得立即重试：下一轮 mkdir 大概率就能拿到锁。
+                        if [ ! -d "$LOCK_DIR" ]; then
+                            i=0
+                            continue
+                        fi
+                        # 清理**失败**（只读挂载 / 挂载点是 EBUSY / immutable）时绝不能 continue：
+                        # 那会跳过下面的计时与 sleep，退化成"无 sleep 的忙等死循环"，
+                        # 总时限永远累不到（qa 第七轮 B3' 实测：10 秒刷 1309 行日志、rc=124 挂死）。
+                        # 这里不归零计数，让它照常计入 120 秒总时限，并限频告警。
+                        if [ "$((i % 25))" -eq 0 ]; then
+                            log_msg "⚠️ 陈旧启动锁清理失败（目录只读或为挂载点？），仍将等待：${LOCK_DIR}"
+                        fi
+                    fi
+                fi
+            fi
+        fi
+        i=$((i + 1))
+        waited=$((waited + 1))
+        if [ "$waited" -ge "$max_ticks" ]; then
+            log_msg "❌ 等待启动锁超时（约 $(( waited / 5 )) 秒），可能有另一个操作卡住了：${LOCK_DIR}"
+            return 1
         fi
         sleep 0.2
     done
+    # 只收紧（与 ensure_data_dir 同一哲学）：不让别人往锁目录里塞 FIFO/设备文件之类的东西，
+    # 那是 "读属主被拖死" 这类问题的可达性前提（qa 第七轮 b 的 N11 复现依据：mkdir 受 umask 影响）。
+    chmod go-rwx "$LOCK_DIR" 2>/dev/null
     { echo "$$"; } 2>/dev/null > "${LOCK_DIR}/owner"
     return 0
 }

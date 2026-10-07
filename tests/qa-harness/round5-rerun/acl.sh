@@ -1,5 +1,5 @@
 #!/bin/bash
-R=/vol4/@appshare/octop-native/qa5-acl
+R=/path/to/qa5-acl
 rm -rf "$R"; mkdir -p "$R"
 printf 'x\n' > "$R/plain-new-file"
 ( umask 077; printf 'x\n' > "$R/secret-umask077" )

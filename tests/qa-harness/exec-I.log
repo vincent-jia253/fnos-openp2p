@@ -1,0 +1,68 @@
+被测源码: /path/to/projects/fnos-openp2p/src/openp2p
+对照组包: /path/to/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk (md5 6898fc7f073c0ab8699eee5299916aec)
+对照组来源: 冻结快照 /path/to/teams/dev-squad/runs/20260930-openp2p-fpk/qa/legacy-8-cmd
+
+=========== I1 · 卸载选「删除配置」必须真的删掉 Token（P1） ===========
+  [PASS] I1a 数据卷上的真实目录已删除
+  [PASS] I1b 符号链接已清理
+  [PASS] I1c Token 已从磁盘消失
+  [PASS] I1d 日志如实报告已删除
+  [对照] 旧实现：Token 仍在数据卷上（LEAK）→ 本用例有鉴别力
+  [PASS] I1e 选「保留配置」时数据完好
+ln: failed to create symbolic link '/tmp/qaI/i1guard/app/shares/openp2p/important': File exists
+  [PASS] I1f 白名单外的目录被拒绝删除（守卫生效）
+
+=========== I2 · 冷启动不许清掉用户手写的 apps[]（P2） ===========
+  [PASS] I2a ensure_token_in_conf 返回成功（rc=0）
+  [PASS] I2b 改写后仍是合法 JSON
+  [PASS] I2c 用户手写的 apps[] 被保留
+  [PASS] I2d Token 已写入（不带引号的数字）
+  [PASS] I2e 改写前已留备份 config.json.bak
+  [PASS] I2f 备份权限为 600（含 Token）
+  [PASS] I2g config.json 权限为 600
+  [对照] 旧实现：apps[] 已丢失（内容变成 {"network":{"Token":123456789}}）→ 本用例有鉴别力
+  [PASS] I2h 已有 Token 键时：换值且保留 apps
+  [PASS] I2i 结构异常时原文件被保留为 .broken（未覆盖用户文件）
+
+=========== I3 · 运行时目录不可用时必须快速失败，不许挂死（P3） ===========
+  [PASS] I3a 启动在 0s 内返回（rc=1，不是 124 超时）
+  [PASS] I3b 返回码为 1（明确失败，不是 0 假成功）
+  [PASS] I3c 日志给出可读原因
+  [对照] 旧实现：12 秒未返回（rc=124 挂死）→ 本用例有鉴别力
+  [PASS] I3d 陈旧锁被清理后可正常获取（不误判为活锁）
+  [PASS] I3e 新鲜锁存在时按预期等待（不抢锁）
+  [PASS] I3f 等待期间未删掉别人持有的新鲜锁
+
+=========== I4 · 陈旧锁 + 锁目录删不掉（只读挂载）也不许忙等挂死（B3'） ===========
+  [PASS] I4a 陈旧锁 + 只读目录下仍在 2 秒内返回（rc=1，非 124 挂死）
+  [PASS] I4b 返回码为 1（明确失败，不是假成功）
+  [PASS] I4c 未退化成忙等（日志 5 行，要求 < 40）
+  [PASS] I4d 日志交代了锁清理失败/超时
+  [对照] 旧实现：12 秒未返回（rc=124 忙等挂死）→ 本用例有鉴别力
+
+=========== I5 · 第七轮审计的非阻塞项加固（N5/N6/N7/N9/N10） ===========
+  [PASS] I5a 指到 $APPDIR/target 的数据目录被拒绝删除（安装目录未被误删）
+  [对照] -9：把整个 target/ 一起删了（白名单过宽）→ 本用例有鉴别力
+  [PASS] I5b $APPDIR 是符号链接时仍能真删（规范化后命中白名单）
+  [对照] -9：拒绝了删除（Token 留存）→ 本用例有鉴别力
+  [PASS] I5c 符号链接 config.json：链接保留且 Token 写进了真实目标文件
+  [对照] -9：链接被换成普通文件、真实目标未被更新 → 本用例有鉴别力
+  [PASS] I5d 活进程持有的超龄锁不被夺走（等待超时 rc=1，锁仍在）
+  [对照] -9：夺走了活进程的锁（rc=0）→ 本用例有鉴别力
+  [PASS] I5e 锁路径被普通文件占用时自动清理并成功取锁（不再永久挡住）
+  [对照] -9：快速失败且那个文件一直留着（start/stop 被永久挡住）→ 本用例有鉴别力
+
+=========== I6 · 第七轮 b 复验挖出的 N11–N14（读属主阻塞 / stderr 泄漏 / 注入点越界 / 链接逃逸） ===========
+  [PASS] I6a[fifo] owner 是 fifo 时未被拖死（0s，rc=0，outer=0）
+  [PASS] I6a[symzero] owner 是 symzero 时未被拖死（0s，rc=0，outer=0）
+  [对照] -10：FIFO 属主下 8 秒仍未返回（rc=124 被拖死）→ 本用例有鉴别力
+  [PASS] I6b owner 缺失时 stderr 零泄漏（实测 0 字节）
+  [对照] -10：stderr 泄漏 200 字节（owner: No such file…）→ 本用例有鉴别力
+  [PASS] I6c 超长 O2P_LOCK_MAX_TICKS：判据未失效且 stderr 干净（outer=124，stderr=0 字节）
+  [对照] -10：同一场景 stderr 刷出 3700 字节「integer expression expected」→ 判据失效（永不返回）
+  [PASS] I6d 指向数据目录外的链接被拒绝（rc=1）
+  [PASS] I6e 外部文件未被写入 Token
+  [PASS] I6f 数据目录内的链接仍照常写入（链接未脱、目标已更新）
+  [对照] -10：Token 被写进了数据目录之外的文件 → 本用例有鉴别力
+
+=========== 块 I 结果：PASS=37  FAIL=0 ===========

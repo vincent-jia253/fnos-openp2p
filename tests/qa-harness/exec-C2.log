@@ -21,7 +21,7 @@
   [PASS] 无关进程未被误杀（PID 复用保护生效）
   [PASS] 日志记录了跳过 kill
   [PASS] 指向无关存活进程 → status=3（不误判）
-exec-C2.sh: line 64: 468057 Killed                  sleep 300
+exec-C2.sh: line 81: 3868574 Killed                  sleep 300
   [PASS] 脏 pid 后 start rc=0
   [PASS] app.pid 已重写为真实新 PID
   [PASS] 进程数=1

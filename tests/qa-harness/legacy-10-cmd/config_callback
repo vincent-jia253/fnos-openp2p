@@ -1,0 +1,34 @@
+#!/bin/bash
+### 应用设置页「保存」之后调用
+### wizard/config 里的字段以同名环境变量传入，留空 = 保留原值
+###   openp2p_token / openp2p_node / openp2p_sharebandwidth
+###   openp2p_serverhost / openp2p_serverport / openp2p_loglevel
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SELF_DIR}/common" ]; then
+    # shellcheck source=common
+    . "${SELF_DIR}/common"
+else
+    # shellcheck source=/dev/null
+    . "/var/apps/openp2p/cmd/common"
+fi
+
+if ! apply_settings_env; then
+    log_msg "❌ 设置写入失败（${SETTINGS} 不可写），本次保存未生效"
+    exit 1
+fi
+log_msg "应用设置已更新：$(cfg_get node) @ $(cfg_get serverhost):$(cfg_get serverport)，带宽上限 $(cfg_get sharebandwidth)Mbps"
+
+# 设置变更后使其生效
+if is_running; then
+    log_msg "检测到应用正在运行，自动重启以应用新设置"
+    bash "${SELF_DIR}/main" stop  >/dev/null 2>&1
+    bash "${SELF_DIR}/main" start >/dev/null 2>&1
+else
+    # 未运行时也要拉起：用户常常是「装完发现没启动 → 来设置里填 Token」，
+    # 如果保存后仍不启动，他就还得自己去应用中心找「启动」按钮，体验断裂。
+    log_msg "应用当前未运行，尝试启动以应用新设置"
+    bash "${SELF_DIR}/main" start >/dev/null 2>&1 || true
+fi
+
+exit 0
