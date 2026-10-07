@@ -1,0 +1,40 @@
+=========== TC-23 越界值被拒绝并回退默认 (校验契约) ===========
+  sharebandwidth => sharebandwidth=10
+  [PASS] sharebandwidth 100001 回退为 10
+  [PASS] serverport 0 回退为 27183
+  [PASS] serverport 65536 回退为 27183
+  [PASS] loglevel 9 回退为 1
+  [PASS] 带宽拒绝有提示
+  [PASS] 端口拒绝有提示
+=========== TC-24 命令注入无效 (校验契约,I5) ===========
+  [harness] 清理上例残留进程
+  [PASS] rm -rf 未被执行（marker 完好）
+  [PASS] $( ) 未被求值
+  [PASS] 反引号未被求值
+  [PASS] 分号注入未生效
+  [PASS] 注入型 serverhost 已回退默认
+  [PASS] 注入串未写入配置
+=========== TC-25 脏 pid 不误判、不误杀 (R1,R7,CLI) ===========
+  [harness] 清理上例残留进程
+  [PASS] 指向不存在进程的脏 pid → status=3
+  [PASS] 脏 pid 下 stop rc=0
+  [PASS] 无关进程未被误杀（PID 复用保护生效）
+  [PASS] 日志记录了跳过 kill
+  [PASS] 指向无关存活进程 → status=3（不误判）
+exec-C2.sh: line 64: 3456701 Killed                  sleep 300
+  [PASS] 脏 pid 后 start rc=0
+  [PASS] app.pid 已重写为真实新 PID
+  [PASS] 进程数=1
+=========== TC-26 包结构契约 (包结构,R5) ===========
+  [PASS] 包内必备文件齐全（含 cmd 10 脚本 / wizard 3 文件）
+  [PASS] manifest.checksum == md5(app.tgz)
+  [PASS] ICON.PNG 为 64x64
+  [PASS] ICON_256.PNG 为 256x256
+  [PASS] 两个图标均 ≤1024KB
+  [PASS] app.tgz 内 4 架构二进制齐备且非空
+   x86_64    ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=uod27rkV-luq4hg_tFyF/lqoMUwVMKDU9SYOXEdUT/XtHPtQgcmztx5xl-123b/79AASJVV4UEogTVUjbKG, stripped
+   aarch64   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, Go BuildID=_RVsY1qZR-wzILhMMPp9/A_jcNd13KLya6pRYaza1/D47nDMnDEQAMFu3rnM3m/llIDxTXxi_iTvnKFpXyO, stripped
+   armv7     ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, Go BuildID=lPm9oc2EenCrIHtHWFRZ/2dYWTDymCJcC5Absdru-/mIT8zkcYmP_YlthjKMDB/anu9d5K_D30F45rLToYE, stripped
+   i386      ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), statically linked, Go BuildID=hXqSH6LbyV_U2xHSCBS8/rrV9bYhyiHT9dzodh_cr/MdA7CC8PHANfOSXDDTWJ/TGyD8Ci0t_-YWOmPI7e7, stripped
+
+=========== 块 C2 汇总：PASS=26  FAIL=0 ===========

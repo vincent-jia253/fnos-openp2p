@@ -1,0 +1,42 @@
+================ 场景 A（settings.conf 不存在）================
+  SETTINGS 存在? no   DATA_DIR=/tmp/qa5/half-A/shares/openp2p
+  main start rc=0    pid=3510371   进程存活=yes
+  main status rc=0（0=运行中 3=未运行）输出：
+  ---- apps.log 关键行 ----
+    1:[2026-09-30 19:30:22] [openp2p] ⚠️ 尚未配置 Token：应用将启动但不会登录组网，请在应用界面填写 Token 后保存。
+    2:[2026-09-30 19:30:22] [openp2p] 启动中：node=my-fnos server=api.openp2p.cn:27183 sharebandwidth=10 loglevel=1
+    3:2026/09/30 19:30:22.514236 3510371 ERROR c.Network.Token == 0 skip save
+    11:[2026-09-30 19:30:24] [openp2p] ✅ 启动成功，pid=3510371
+  ---- 实际交付给 openp2p 的 argv ----
+    3510371 /tmp/qa5/half-A/shares/openp2p/openp2p -node my-fnos -sharebandwidth 10 -serverhost api.openp2p.cn -serverport 27183 -loglevel 1 -installpath /tmp/qa5/half-A/shares/openp2p
+  ---- config.json 内容（Token 是否被保住/写入） ----
+    {"network":{"Token":0}}
+
+================ 场景 B（settings.conf 不存在，但 config.json 里有旧 Token）================
+  预置 config.json（旧 Token=314159265358），权限=600
+  SETTINGS 存在? no   DATA_DIR=/tmp/qa5/half-B/shares/openp2p
+  main start rc=0    pid=3511083   进程存活=yes
+  main status rc=0（0=运行中 3=未运行）输出：
+  ---- apps.log 关键行 ----
+    1:[2026-09-30 19:30:29] [openp2p] 启动中：node=nas-old server=api.openp2p.cn:27183 sharebandwidth=10 loglevel=1
+    9:[2026-09-30 19:30:31] [openp2p] ✅ 启动成功，pid=3511083
+  ---- 实际交付给 openp2p 的 argv ----
+    3511083 /tmp/qa5/half-B/shares/openp2p/openp2p -node nas-old -sharebandwidth 10 -serverhost api.openp2p.cn -serverport 27183 -loglevel 1 -installpath /tmp/qa5/half-B/shares/openp2p
+  ---- config.json 内容（Token 是否被保住/写入） ----
+    {
+      "network": {
+        "Token": 314159265358,
+        "Node": "nas-old",
+        "User": "",
+        "ShareBandwidth": 10,
+        "ServerHost": "api.openp2p.cn",
+        "ServerIP": "",
+        "ServerPort": 27183,
+        "PublicIPPort": 8625
+      },
+      "apps": null,
+      "LogLevel": 1,
+      "MaxLogSize": 1048576,
+      "TLSInsecureSkipVerify": false,
+      "Forcev6": false
+    }

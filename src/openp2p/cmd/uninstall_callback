@@ -1,0 +1,33 @@
+#!/bin/bash
+### 卸载后调用：按用户在 wizard/uninstall 里的选择处理数据
+### 用户选择以 openp2p_data_action 传入：keep=保留 / delete=删除
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SELF_DIR}/common" ]; then
+    # shellcheck source=common
+    . "${SELF_DIR}/common"
+else
+    # shellcheck source=/dev/null
+    . "/var/apps/openp2p/cmd/common"
+fi
+
+action="${openp2p_data_action:-keep}"
+
+# 防御性再停一次：正常情况下 uninstall_init 已经停过，但若它没跑到/失败了，
+# 直接删数据目录会在运行中的进程脚下抽掉二进制与配置，留下孤儿进程。
+if [ -x "${SELF_DIR}/main" ]; then
+    bash "${SELF_DIR}/main" stop >/dev/null 2>&1
+fi
+
+case "$action" in
+    delete)
+        rm -rf "$DATA_DIR"
+        rm -f "$LOG_FILE"
+        log_msg "卸载：已按用户选择删除配置与日志（${DATA_DIR}）"
+        ;;
+    *)
+        log_msg "卸载：已按用户选择保留配置（${DATA_DIR}/settings.conf、config.json）"
+        ;;
+esac
+
+exit 0

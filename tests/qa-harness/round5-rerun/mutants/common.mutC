@@ -1,0 +1,436 @@
+#!/bin/bash
+# openp2p fnOS 应用 — 公共常量与函数（被 cmd/* 与 ui/index.cgi source）
+# 注意：本文件被 source，不要在此处 exit
+
+APPNAME="${TRIM_APPNAME:-openp2p}"
+# OPENP2P_APPROOT 仅用于本地/CI 模拟运行（fnOS 上不需要设置）
+APPDIR="${OPENP2P_APPROOT:-/var/apps/${APPNAME}}"
+APPDEST="${TRIM_APPDEST:-${APPDIR}/target}"     # app.tgz 解包后的根（bin/ ui/）
+PKGVAR="${TRIM_PKGVAR:-${APPDIR}/var}"          # 运行时状态目录（pid / 启动时间）
+DATA_DIR="${APPDIR}/shares/${APPNAME}"          # 持久化数据（config.json / settings.conf / log）
+CONF="${DATA_DIR}/config.json"                  # openp2p 自己维护的配置
+SETTINGS="${DATA_DIR}/settings.conf"            # 本应用维护的设置（启动时以 flags 传入）
+PID_FILE="${PKGVAR}/app.pid"
+START_FILE="${PKGVAR}/start_time"
+PAYLOAD_BIN="${APPDEST}/bin"                    # 包内二进制（每架构一份 openp2p_<arch>）
+# 关键：openp2p 从「可执行文件所在目录」解析 config.json 与 log/（实测，-installpath 无效）。
+# 因此把二进制放到持久数据目录再运行，保证配置与日志落在不会被升级覆盖的位置。
+BIN="${DATA_DIR}/openp2p"
+LOG_FILE="${LOG_FILE:-/var/log/apps/${APPNAME}.log}"
+DEFAULT_SERVERHOST="api.openp2p.cn"
+DEFAULT_SERVERPORT="27183"
+
+log_msg() {
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
+    # 【重定向顺序】（本机 bash 5.2.15 实测，别凭直觉写）：
+    # 重定向按「从左到右」生效。若写成 `... >> file 2>/dev/null`，一旦文件打不开
+    # （目录不可写），bash 会用【尚未被覆盖】的原 stderr 报 "Permission denied"——
+    # 2>/dev/null 还没来得及生效，于是泄漏到调用者 stderr（CGI 会污染 web 错误日志）。
+    # 实测四种写法，仅两种有效：
+    #   x >> f 2>/dev/null      → 泄漏 ❌（先失败）
+    #   { x; } >> f 2>/dev/null → 泄漏 ❌（同上，包一层组命令也不管用）
+    #   2>/dev/null >> f        → 干净 ✅（stderr 先被重定向，再开文件）
+    #   { x >> f; } 2>/dev/null → 干净 ✅
+    # 本文件统一采用「2>/dev/null 在前」的写法。
+    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${APPNAME}] $*"; } 2>/dev/null >> "$LOG_FILE"
+}
+
+# 写日志 + 同时写 fnOS 安装进度界面（TRIM_TEMP_LOGFILE），用于告知用户"输入被拒绝"
+warn_msg() {
+    log_msg "$*"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        { echo "$*"; } 2>/dev/null >> "$TRIM_TEMP_LOGFILE"
+    fi
+    return 0
+}
+
+# 去掉首尾空白
+str_trim() { echo "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '\r'; }
+
+# 从 settings.conf 读 key=value
+cfg_get() {
+    [ -f "$SETTINGS" ] || return 0
+    sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$SETTINGS" 2>/dev/null \
+        | tail -n 1 | tr -d '\r' | sed 's/^"//;s/"$//' | tr -d '\n'
+}
+
+# 从 openp2p 的 config.json 读一个键（粗粒度但够用：只读 network 段的标量）
+json_get() {
+    [ -f "$CONF" ] || return 0
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^,\"}]*\)\"\{0,1\}.*/\1/p" "$CONF" 2>/dev/null \
+        | head -n 1 | tr -d '[:space:]'
+}
+
+# 日志轮转：超过 5MB 时只保留尾部 2MB
+rotate_log() {
+    [ -f "$LOG_FILE" ] || return 0
+    local size mode
+    size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+    if [ "$size" -gt 5242880 ]; then
+        # 轮转后的新文件要**沿用原文件的权限位**：`>` 重定向是按进程 umask 新建文件，
+        # 原日志若是 0600，直接覆盖会把它降成 0644（同类问题见 P2-D）。
+        tail -c 2097152 "$LOG_FILE" 2>/dev/null > "${LOG_FILE}.tmp" \
+            && mv -f "${LOG_FILE}.tmp" "$LOG_FILE" 2>/dev/null
+        log_msg "日志已轮转（原 ${size} 字节）"
+    fi
+}
+
+# 定位 openp2p 进程（PID 文件失效时的兜底）
+# 注意：不能直接信任「名字叫 openp2p 的进程」——机器上可能有另一份安装（或另一个应用）
+# 也叫 openp2p，那样 status 会误报、stop 会误杀别人的进程。故兜底路径必须用
+# /proc/<pid>/exe 逐个校验，确认是【本应用数据目录里的那个二进制】。
+find_all_pids() {
+    local p seen=" "
+    # 两条通道（命令行前缀 / 进程名）合并去重后，【逐个】用 is_our_pid 复核。
+    #
+    # 为什么通道 1 也要复核：只比 argv0 是不够的 —— 本机任何用户都能用
+    #   exec -a /var/apps/openp2p/shares/openp2p/openp2p sleep 300
+    # 造出一个 argv0 完全相同的无关进程；若直接采信，stop 就会去 SIGTERM 它，
+    # 这正是 B5「PID 复用误杀无关进程」的同一类错误。
+    # is_our_pid 内部：exe 可读时按「路径规范化 + dev:inode」严格比对；
+    # exe 不可读（跨用户 EACCES）时才退到 argv0 判据 —— 这是能力上限，非疏漏。
+    for p in $(pgrep -f "^${BIN}" 2>/dev/null) $(pgrep -x openp2p 2>/dev/null); do
+        case "$seen" in *" $p "*) continue ;; esac
+        seen="$seen$p "
+        is_our_pid "$p" && echo "$p"
+    done
+}
+
+find_pid() {
+    find_all_pids | head -n 1
+}
+
+# 是否在运行
+# 设计要点（真机踩坑）：PID 文件只是缓存，不是事实来源。
+# 曾经写成「PID 文件不存在就 return 1」，结果 PID 文件一丢（不同调用者环境不一致、
+# 被 status 清掉等），每次 start 都判定"未运行"而再起一个实例 ——
+# 真机实测 12 秒内起了 3 个 openp2p 互相抢监听端口。故必须回退到进程探测。
+is_running() {
+    local pid p
+    if [ -f "$PID_FILE" ]; then
+        pid=$(head -n 1 "$PID_FILE" 2>/dev/null | tr -d '[:space:]')
+        is_our_pid "$pid" && return 0
+    fi
+    p=$(find_pid)
+    if [ -n "$p" ]; then
+        mkdir -p "$PKGVAR" 2>/dev/null
+        { echo "$p" > "$PID_FILE"; } 2>/dev/null   # 顺手把 PID 文件修复回来（重定向顺序见 log_msg 注释）
+        return 0
+    fi
+    return 1
+}
+
+# 进程是否"真的还活着"。
+# /proc/<pid> 存在 ≠ 进程活着：进程已退出但父进程尚未 wait() 时会留下 zombie，
+# 条目仍在而不做任何事。kill -KILL 对 zombie 无效，若只看目录存在就会永远
+# 报"停不掉"。故解析 /proc/<pid>/stat 第 3 字段（状态），Z = zombie = 视为已死。
+pid_alive() {
+    local p="$1" st
+    [ -n "$p" ] || return 1
+    case "$p" in ''|*[!0-9]*) return 1 ;; esac
+    [ -d "/proc/$p" ] || return 1
+    st=$(cat "/proc/$p/stat" 2>/dev/null) || return 1
+    # 形如 "1234 (comm with) spaces) S 1 ..."，comm 可能含空格/括号，
+    # 所以用「最后一个 ')' 之后」定位状态字段，不能按空格切分
+    st="${st##*)}"
+    st="${st# }"
+    st="${st%% *}"
+    [ "$st" != "Z" ]
+}
+
+# 判断某 PID 是否真的是「我们的」openp2p 进程。
+#
+# 为什么不能只看 kill -0：PID 会被系统复用。一个陈旧的 app.pid（上次没清理干净，
+# 或进程被外部 kill 后 PID 被别的程序占用）会让 status 误报「运行中」，
+# 更糟的是 stop 会去 kill 一个完全无关的进程。这里用 /proc/<pid>/exe 反查可执行文件。
+is_our_pid() {
+    local p="$1"
+    [ -n "$p" ] || return 1
+    case "$p" in ''|*[!0-9]*) return 1 ;; esac
+    # 刻意不用 kill -0 判存活：当调用者与被查进程属主不同（如本脚本被非 root 调用、
+    # 而 openp2p 以 root 跑）时 kill -0 返回 EPERM，会被误判成"进程已死"，
+    # 进而误判"未运行"并重复启动。
+    # 用 pid_alive 代替：它读 /proc/<pid>/stat（跨用户可读），且顺带排除 zombie。
+    # 注意：可靠的是 /proc/<pid> 的存在性，不是 /proc/<pid>/exe 的可读性 ——
+    # 后者跨用户同样 EACCES，故 proc_exe_is_bin 另有 cmdline 兜底。
+    pid_alive "$p" || return 1
+    proc_exe_is_bin "$p"
+}
+
+# /proc/<pid>/exe 是否指向【本应用的二进制】。
+#
+# 【真机根因 · 必读】不能拿 $BIN 直接和 /proc/<pid>/exe 做字符串比较。
+# 本应用 DATA_DIR 落在 /var/apps/<app>/shares/<app>，而该目录是指向
+# /vol4/@appshare/<app> 的符号链接，/proc/<pid>/exe 给出的却是【解析后的真实路径】，
+# 两者永远不相等。真机上因此 is_our_pid 恒为假，后果：
+#   - is_running 恒为假 → 每次 start 都判"未运行"→ 重复起进程
+#     （真机实测 12 秒起了 3 个，互相抢 1025 端口，日志每 5 秒刷 bind 错误）；
+#   - stop 认为 PID 文件"指向的不是本应用"，拒绝按 PID 停止。
+# 故必须先用 readlink -f 把 $BIN 规范化再比（同时也覆盖了"二进制已被升级替换、
+# 旧进程 exe 带 ' (deleted)'"的情况），最后再补一道 dev:inode 校验兜底。
+proc_exe_is_bin() {
+    local p="$1" exe rbin cand a b
+    if exe=$(readlink "/proc/$p/exe" 2>/dev/null); then
+        rbin=$(readlink -f "$BIN" 2>/dev/null)
+        for cand in "$BIN" "$rbin"; do
+            [ -n "$cand" ] || continue
+            case "$exe" in
+                "$cand"|"$cand (deleted)") return 0 ;;
+            esac
+        done
+        # 双保险：路径形态对不上时（bind mount、硬链接、多级链接等）比 设备号:inode。
+        # 取舍：这会把"同 inode 的另一路径"也认作我们自己 —— 但那本来就是同一个二进制。
+        a=$(stat -Lc '%d:%i' "/proc/$p/exe" 2>/dev/null)
+        b=$(stat -Lc '%d:%i' "$BIN" 2>/dev/null)
+        [ -n "$a" ] && [ -n "$b" ] && [ "$a" = "$b" ]
+        return $?
+    fi
+    # 读不到 exe：调用者与被查进程属主不同时，/proc/<pid>/exe 会 EACCES
+    # —— 这与 kill -0 的 EPERM 是同一类跨用户限制（别再宣称"看 /proc 就跨用户无敌"）。
+    # 此时退到【命令行】判据：/proc/<pid>/cmdline 跨用户可读，而本应用的启动方式
+    # 必然以 $BIN（或其解析后路径）作为 argv[0]。
+    # 注意判据强度：命令行只能证明"路径相同"，不能证明 inode 相同 —— 二进制被替换后
+    # 旧进程仍会被认领，而这正是升级场景需要的行为（要能认出 (deleted) 旧实例并停掉）。
+    proc_cmdline_is_bin "$p"
+}
+
+# 按 argv[0] 判断是否本应用（跨用户可读，用作读不到 /proc/<pid>/exe 时的判据）
+proc_cmdline_is_bin() {
+    local p="$1" argv0 rbin cand
+    argv0=$(tr '\0' '\n' < "/proc/$p/cmdline" 2>/dev/null | head -n 1)
+    [ -n "$argv0" ] || return 1
+    rbin=$(readlink -f "$BIN" 2>/dev/null)
+    for cand in "$BIN" "$rbin"; do
+        [ -n "$cand" ] || continue
+        [ "$argv0" = "$cand" ] && return 0
+    done
+    return 1
+}
+
+# 运行时长（人类可读）
+uptime_text() {
+    [ -f "$START_FILE" ] || return 0
+    local st now d
+    st=$(cat "$START_FILE" 2>/dev/null | tr -d '[:space:]')
+    [ -n "$st" ] || return 0
+    now=$(date +%s)
+    d=$(( now - st ))
+    [ "$d" -lt 0 ] && return 0
+    printf '%d天%02d:%02d:%02d' $(( d / 86400 )) $(( d % 86400 / 3600 )) $(( d % 3600 / 60 )) $(( d % 60 ))
+}
+
+# 校验：仅允许安全字符，防止写入 settings.conf 时被注入
+safe_num()  { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
+# 端口范围 1-65535（safe_num 只保证是数字，99999999 这种要挡掉）
+safe_port() { safe_num "$1" && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+# 带宽上限：0-100000 Mbps（防手滑输入天文数字）
+safe_bw()   { safe_num "$1" && [ "$1" -le 100000 ]; }
+safe_node() { case "$1" in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) [ ${#1} -le 31 ] ;; esac; }
+safe_host() { case "$1" in ''|*[!A-Za-z0-9.-]*) return 1 ;; *) return 0 ;; esac; }
+
+# 把 Token 写进 openp2p 自己的 config.json。
+#
+# 为什么不直接用 `-token` 传参：命令行参数会出现在 `ps` 输出里，本机任何用户都能看到 Token。
+# 实测确认（3.25.11）：启动时不传 -token，openp2p 会**保留** config.json 里已有的 Token，
+# 而其他 flags（node / sharebandwidth / serverhost / serverport / loglevel）照常覆盖。
+# 因此 Token 只落 config.json，其余设置仍走 flags。
+# 调用前 TOKEN 必须已通过 safe_num 校验（纯数字）；空串表示「用户清空了 Token」。
+# 重要实测结论：
+#   openp2p 的 Token 字段是【数字】，必须写不带引号的数字。
+#     "Token": 123456789  → 解析成功
+#     "Token": "123456789" → 被解析成 0（登录失败）
+#   所以清空 Token 必须写 0（不能写空串，那会变成非法 JSON，也会让旧 Token 复活）。
+ensure_token_in_conf() {
+    local tok="$1"
+    case "$tok" in
+        '')       tok="0" ;;    # 空 = 显式清零，防止 config.json 里的旧 Token 复活（缺陷 B2）
+        *[!0-9]*) return 1 ;;
+    esac
+    mkdir -p "$DATA_DIR" 2>/dev/null
+
+    if [ -f "$CONF" ] && grep -q '"Token"' "$CONF" 2>/dev/null; then
+        sed -i "s/\"Token\"[[:space:]]*:[[:space:]]*\"\{0,1\}[0-9]*\"\{0,1\}/\"Token\": ${tok}/" "$CONF" 2>/dev/null
+        grep -q "\"Token\": ${tok}" "$CONF" 2>/dev/null || return 1
+    else
+        # 冷启动（或用户把 config.json 改坏了）：写最小配置，
+        # openp2p 会用 flags 补齐其余字段并回写完整结构
+        printf '{"network":{"Token":%s}}\n' "$tok" 2>/dev/null > "$CONF" || return 1
+    fi
+    chmod 600 "$CONF" 2>/dev/null   # 含 Token，仅属主可读
+    return 0
+}
+
+# 启动/停止互斥锁。
+# 为什么需要：is_running 检查与「写 PID 文件」之间存在竞态窗口。
+# 用户连点两次「启动」时，两个进程都可能看到"未运行"从而各起一个 openp2p。
+# 用 mkdir 做原子锁（POSIX 保证原子），并对陈旧锁做超时清理，避免死锁。
+LOCK_DIR="${PKGVAR}/.o2p.lock"
+
+acquire_lock() {
+    local i=0
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        i=$((i + 1))
+        if [ "$i" -ge 50 ]; then
+            # 持有者可能已崩溃 → 超过 60 秒的锁视为陈旧，强制接管
+            local age
+            age=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
+            if [ "$age" -gt 60 ]; then
+                log_msg "⚠️ 清理陈旧启动锁（已存在 ${age} 秒）"
+                rm -rf "$LOCK_DIR" 2>/dev/null
+            fi
+            i=0
+        fi
+        sleep 0.2
+    done
+    { echo "$$"; } 2>/dev/null > "${LOCK_DIR}/owner"
+    return 0
+}
+
+release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; return 0; }
+
+# 二进制版本号
+bin_version() {    [ -x "$BIN" ] || { echo "未安装"; return 0; }
+    "$BIN" -v 2>/dev/null | head -n 1 | tr -d '\r\n'
+}
+
+# 当前机器对应的包内二进制后缀
+detect_cpucore() {
+    case "$(uname -m)" in
+        x86_64|amd64)         echo "x86_64"  ;;
+        i386|i486|i586|i686)  echo "i386"    ;;
+        aarch64|arm64)        echo "aarch64" ;;
+        # armv8l = 64 位 ARM 内核跑 32 位用户态，必须用 32 位的 armv7 包
+        armv8l)               echo "armv7"   ;;
+        armv7l|armv7|armv7hl|armv7a|armv6l|armv6) echo "armv7" ;;
+        *)                    echo ""        ;;
+    esac
+}
+
+# 把包内 openp2p_<arch> 部署到数据目录并自检；成功 0，失败 1
+# 设计要点：先自检候选二进制，通过后才替换正式文件，避免把可用的旧二进制换成跑不起来的新二进制。
+# 升级时本函数会再次执行：替换二进制，但数据目录里的 config.json / log 原样保留。
+fix_binary_arch() {
+    local core src ver cand
+    core=$(detect_cpucore)
+    if [ -z "$core" ]; then
+        log_msg "❌ 不支持的系统架构：$(uname -m)"
+        return 1
+    fi
+
+    src="${PAYLOAD_BIN}/openp2p_${core}"
+    if [ ! -f "$src" ]; then
+        if [ -x "$BIN" ]; then
+            log_msg "包内无 openp2p_${core}，沿用数据目录中已有二进制（$(bin_version)）"
+            return 0
+        fi
+        log_msg "❌ 安装包内缺少 ${core} 架构的二进制，且数据目录中也没有可用二进制"
+        return 1
+    fi
+
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    cand="${BIN}.new.$$"
+    # stderr 一律抑制：数据目录不可写时，裸的 "cp: Permission denied" 会打到
+    # 安装/升级回调的调用方 stderr（应用中心 / web 错误日志）。
+    # 这是 P2-1「统一抑制纪律」时**漏掉的同一类写法**（qa 第四轮实跑抓到，96 字节泄漏）。
+    if ! cp -f "$src" "$cand" 2>/dev/null; then
+        log_msg "❌ 复制二进制到数据目录失败：$cand（可能磁盘空间或权限不足）"
+        return 1
+    fi
+    chmod +x "$cand" 2>/dev/null
+
+    ver=$("$cand" -v 2>/dev/null | head -n 1 | tr -d '\r\n')
+    case "$ver" in
+        [0-9]*.[0-9]*) ;;
+        *)
+            log_msg "❌ 候选二进制无法运行（架构 ${core}），版本输出：${ver:-空}；保留原二进制"
+            rm -f "$cand" 2>/dev/null
+            return 1 ;;
+    esac
+
+    if ! mv -f "$cand" "$BIN" 2>/dev/null; then
+        log_msg "❌ 替换二进制失败：$BIN（可能磁盘空间或权限不足）"
+        rm -f "$cand" 2>/dev/null
+        return 1
+    fi
+    rm -f "${PAYLOAD_BIN}"/openp2p_* 2>/dev/null
+    log_msg "✅ 二进制就位：架构 ${core}，版本 ${ver}，位置 ${BIN}"
+    return 0
+}
+
+# 由 wizard 传入的同名环境变量写 settings.conf（缺省项保留原值）
+# 依赖：openp2p_token / openp2p_node / openp2p_sharebandwidth
+#       openp2p_serverhost / openp2p_serverport / openp2p_loglevel
+apply_settings_env() {
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    local t n sb sh sp ll v tmp
+    t=$(cfg_get token);       n=$(cfg_get node)
+    sb=$(cfg_get sharebandwidth); sh=$(cfg_get serverhost)
+    sp=$(cfg_get serverport); ll=$(cfg_get loglevel)
+
+    v=$(str_trim "${openp2p_token:-}")
+    if [ -n "$v" ]; then
+        if safe_num "$v"; then t="$v"; else warn_msg "⚠️ Token 只接受数字，已忽略输入：「${v}」"; fi
+    fi
+    v=$(str_trim "${openp2p_node:-}")
+    if [ -n "$v" ]; then
+        if safe_node "$v"; then n="$v"; else warn_msg "⚠️ 节点名须为 1-31 位字母/数字/-/_，已忽略输入：「${v}」"; fi
+    fi
+    v=$(str_trim "${openp2p_sharebandwidth:-}")
+    if [ -n "$v" ]; then
+        if safe_bw "$v"; then sb="$v"; else warn_msg "⚠️ 共享带宽上限须为 0-100000，已忽略输入：「${v}」"; fi
+    fi
+    v=$(str_trim "${openp2p_serverhost:-}")
+    if [ -n "$v" ]; then
+        if safe_host "$v"; then sh="$v"; else warn_msg "⚠️ 服务端地址非法，已忽略输入：「${v}」"; fi
+    fi
+    v=$(str_trim "${openp2p_serverport:-}")
+    if [ -n "$v" ]; then
+        if safe_port "$v"; then sp="$v"; else warn_msg "⚠️ 服务端端口须为 1-65535，已忽略输入：「${v}」"; fi
+    fi
+    v=$(str_trim "${openp2p_loglevel:-}")
+    if [ -n "$v" ]; then
+        case "$v" in 0|1|2|3) ll="$v" ;; *) warn_msg "⚠️ 日志级别须为 0-3，已忽略输入：「${v}」" ;; esac
+    fi
+
+    [ -n "$n" ]  || n=$(hostname 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-' | cut -c1-31)
+    [ -n "$n" ]  || n="fnos-nas"
+    [ -n "$sb" ] || sb=10
+    [ -n "$sh" ] || sh="$DEFAULT_SERVERHOST"
+    [ -n "$sp" ] || sp="$DEFAULT_SERVERPORT"
+    [ -n "$ll" ] || ll=1
+
+    # 与界面同一套纪律：先写临时文件 → 校验非空 → 原子改名，失败不许谎报成功。
+    # 旧写法（`cat > "$SETTINGS" <<EOF`）在目录不可写时会把 bash 裸错误打到回调 stderr，
+    # 调用方却仍 `exit 0` 报「安装完成/设置已更新」—— 用户以为存上了（qa 第四轮抓到同类）。
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    tmp="${SETTINGS}.tmp.$$"
+    # P2-D 同类：临时文件里是**带 Token 的明文**，必须「一创建就是 0600」，
+    # 不能等 mv 之后再 chmod —— 那中间有一段时间它是按进程 umask（通常 0644）建的。
+    # 本函数与 ui/index.cgi 的 save/raw_save 共用同一套纪律（umask 077 + 非空校验 + 原子改名）。
+    if ( umask 077; cat > "$tmp" <<EOF
+# openp2p 应用设置 —— 由 fnOS 应用界面维护，也可手动编辑后重启应用
+# token          : console.openp2p.cn → 个人资料 里的数字 Token
+# node           : 本机在 P2P 网络中的唯一节点名（1-31 位字母/数字/-/_）
+# sharebandwidth : 作为共享节点提供的带宽上限 (Mbps)，0 = 不加入共享网络
+# serverhost     : openp2p 服务端地址，默认 ${DEFAULT_SERVERHOST}
+# serverport     : openp2p 服务端端口，默认 ${DEFAULT_SERVERPORT}
+# loglevel       : 0调试 1信息 2警告 3错误
+token=$t
+node=$n
+sharebandwidth=$sb
+serverhost=$sh
+serverport=$sp
+loglevel=$ll
+EOF
+       ) 2>/dev/null \
+       && [ -s "$tmp" ] \
+       && { mv -f "$tmp" "$SETTINGS"; } 2>/dev/null \
+       && [ -f "$SETTINGS" ]; then
+        rm -f "$tmp" 2>/dev/null
+        chmod 600 "$SETTINGS" 2>/dev/null
+        return 0
+    fi
+    rm -f "$tmp" 2>/dev/null
+    warn_msg "❌ 设置写入失败：${SETTINGS} 不可写（请检查存储空间与权限）"
+    return 1
+}

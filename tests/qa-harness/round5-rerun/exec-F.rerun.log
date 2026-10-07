@@ -1,0 +1,33 @@
+被测源码: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
+包 md5  : 3608a54efe1b966d6e80e93195e815d1（二进制来源）
+
+=========== F1 无任何配置（无 settings.conf / 无 config.json / 无 Token）→ 应仍能启动 ===========
+  [PASS] 无 Token 时 start 返回 0（不再跳过）
+  [PASS] status = 0（运行中）
+  [PASS] 进程真实存在
+  [PASS] 日志给出『尚未配置 Token』提示
+
+=========== F2 清空 Token（settings.conf 空白 + config.json 遗留旧 Token）→ 旧值不得复活 ===========
+  [PASS] 清空 Token 后仍能启动（rc=0）
+  [PASS] config.json 旧 Token 已被清零为 0（B2 保护保留）
+  [PASS] 旧 Token 未残留在 config.json
+
+=========== F3 有 Token → 写入格式必须是【不带引号的数字】 ===========
+  [PASS] 有 Token 时启动成功
+  [PASS] Token 以数字形式写入（openp2p 可解析）
+  [PASS] Token 未加引号
+  [PASS] 日志无 Token 明文
+
+=========== F4 config_callback：应用未运行时也应自动拉起 ===========
+  [PASS] 保存设置后应用被自动拉起
+  [PASS] 日志记录『未运行，尝试启动』
+
+=========== F5 幂等：已运行再 start 不得起第二个进程 ===========
+  [PASS] 重复 start 仍只有 1 个进程
+
+=========== F6 stop 后 status 必须为 3（未运行） ===========
+  [PASS] status = 3
+  [PASS] 无残留进程
+
+=========== 块 F 汇总 ===========
+PASS=16 FAIL=0

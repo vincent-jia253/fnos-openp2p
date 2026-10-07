@@ -1,0 +1,14 @@
+appname               = openp2p
+version               = 3.25.11-1
+display_name          = OpenP2P 内网穿透
+desc                  = <h3>OpenP2P — 轻量级 P2P 共享网络 / 内网穿透</h3>设备之间先尝试 <b>UDP/TCP 打洞</b> 直连，打不通自动回落<b>中继转发</b>；<b>无需自备公网服务器</b>，也无需付费。<br>传输使用 <b>TLS1.3 + AES</b> 双重加密，中继节点无法获取明文。<br><br><b>典型用途：</b>远程桌面（RDP）、SSH、NAS / Web 服务外网访问、内网 ERP、摄像头、远程刷机。<br><br><b>使用步骤：</b><br>1. 到 <a href="https://console.openp2p.cn" target="_blank">console.openp2p.cn</a> 注册账号，在「个人资料」里复制 <b>Token</b>（纯数字）<br>2. 打开本应用，填入 Token 与节点名，点击「保存并启动」<br>3. 在 console 里给本节点创建 <b>P2PApp</b>（端口转发），即可从其它设备访问<br><br><b>本封装特性：</b>全架构自动适配（x86_64 / arm64 / armv7 / i386）、应用内可视化配置、日志与状态查看、无需命令行。<br><br><b>上游项目：</b><a href="https://github.com/openp2p-cn/openp2p" target="_blank">openp2p-cn/openp2p</a>（MIT）
+platform              = all
+source                = thirdparty
+maintainer            = openp2p-cn
+maintainer_url        = https://github.com/openp2p-cn/openp2p
+distributor           = fnOS-fpk
+distributor_url       = https://github.com/openp2p-cn/openp2p
+ctl_stop              = true
+install_type          = root
+desktop_uidir         = ui
+desktop_applaunchname = openp2p.Application

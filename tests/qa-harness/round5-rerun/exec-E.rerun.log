@@ -1,0 +1,40 @@
+=========== 证据绑定（T5）===========
+被测包: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-7_all.fpk
+包 md5 : 3608a54efe1b966d6e80e93195e815d1
+执行时间: 2026-09-30 19:15:20
+  mock 自检: armv8l (期望 armv8l)
+
+=========== TC-08d 架构映射动态验证（B6 · 脚本桩隔离）===========
+  断言：fix_binary_arch 依据 mock 的 uname -m 选中正确架构文件
+  [PASS] uname=armv8l → 选中 armv7
+  [PASS] uname=armv7hl → 选中 armv7
+  [PASS] uname=armv7a → 选中 armv7
+  [PASS] uname=armv7l → 选中 armv7
+  [PASS] uname=armv6l → 选中 armv7
+  [PASS] uname=aarch64 → 选中 aarch64
+  [PASS] uname=arm64 → 选中 aarch64
+  [PASS] uname=amd64 → 选中 x86_64
+  [PASS] uname=x86_64 → 选中 x86_64
+  [PASS] uname=i686 → 选中 i386
+  [PASS] uname=i386 → 选中 i386
+  [PASS] uname=riscv64 → 正确拒绝(rc=1) 并提示不支持
+  [PASS] uname=riscv64 → 日志含『不支持的系统架构』
+
+  —— B6 专项：armv8l 命中与日志留痕 ——
+  [PASS] B6: armv8l 设备日志记录『架构 armv7』
+  [PASS] B6: 落盘二进制可执行权限 755
+
+=========== TC-08e 真二进制佐证（armv8l 实收哪份文件）===========
+  [PASS] 包内存在 openp2p_armv7（armv8l 实收文件）
+  openp2p_armv7 md5（= armv8l 设备将收到的文件）: 4afa700df8b0612696a00ab5161b68a0
+  [PASS] armv8l 实收的 openp2p_armv7 可执行且版本 3.25.11（qemu 实测）
+
+=========== TC-08f 错架构候选被自检拒绝（补 T1 静默跳过）===========
+  构造：宿主 mock 为 x86_64，但包内 openp2p_x86_64 实际是 aarch64 真实 ELF
+  [PASS] 错架构候选 → install_callback rc=1
+  [PASS] 日志明确『候选二进制无法运行』并含架构提示
+  [PASS] 旧二进制未被错架构文件替换（md5 不变）
+  [PASS] 数据目录二进制仍可正常执行
+
+=========== 块 E 汇总 ===========
+PASS=21 FAIL=0

@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "openp2p",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "openp2p"
+                    ]
+                }
+            },
+            {
+                "name": "openp2p/data",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "openp2p"
+                    ]
+                }
+            }
+        ]
+    }
+}

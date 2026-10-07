@@ -1,0 +1,18 @@
+=== TC-08b 四架构二进制可执行性实测 ===
+（qemu-user-static 由 Debian 包免 root 解包：/tmp/qemuget/x/usr/bin）
+  [PASS] x86_64 可执行，版本输出：3.25.11
+  [PASS] aarch64 可执行，版本输出：3.25.11
+  [PASS] armv7 可执行，版本输出：3.25.11
+  [FAIL] i386 执行异常：fatal error: unexpected signal during runtime execution
+
+=== TC-08c 判定 i386 异常是 qemu 局限还是二进制损坏 ===
+对照实验：Go 官方 386 工具链（真实 386 硬件上必然可用）在同一 qemu-i386 下运行
+  官方 go 386 输出：fatal: morestack on g0
+SIGTRAP: trace trap
+  [结论] 官方 Go 386 二进制同样崩溃 → 属 qemu-i386 对 Go 二进制的模拟局限，非本包二进制损坏
+
+=== 对照：三个可用架构的 Go 构建信息 ===
+  openp2p_x86_64     go1.20.14
+  openp2p_aarch64    go1.20.14
+  openp2p_armv7      go1.20.14
+  openp2p_i386       go1.20.14

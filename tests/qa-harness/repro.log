@@ -1,0 +1,49 @@
+复现集运行时间：2026-10-01 03:15:46
+被测产物：/vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/dist/openp2p_3.25.11-8_all.fpk
+  md5    = 6898fc7f073c0ab8699eee5299916aec
+  sha256 = 9df9220747f4ee0f2c95fd2b153c8d380224f3213f74fbd04a69048a7a3896fa
+
+=========== R1 重定向顺序：把目标文件写在 2>/dev/null 之前会泄漏 stderr（P2-1 的核心事实） ===========
+  旧写法 { echo x; } >> f 2>/dev/null   → stderr 59 字节
+  新写法 { echo x; } 2>/dev/null >> f   → stderr 0 字节
+  [OK]   旧写法泄漏、新写法干净 → 这条判据有鉴别力（不是怎么写都不泄漏）
+
+=========== R2 产品代码：确认没有残留的旧写法 + 用行为实验验证写入函数不泄漏（P2-1 / BLK-3） ===========
+  R2a 同行顺序错命中：0
+  [OK]   R2a：无『目标文件在 2>/dev/null 之前』的写法
+  R2b 跨行组未收尾命中：0
+  [OK]   R2b：所有写入一律走上『2>/dev/null 在前 + 组收尾』的形式
+  [-6] stderr=0 字节
+  [OK]   R2c：-6 的 log_msg/warn_msg 在日志不可写时零泄漏
+  [-4 对照] stderr=293 字节
+  [OK]   R2c 对照组：-4 旧写法确实泄漏 → 本用例有鉴别力
+
+=========== R3 界面保存：写失败时必须如实报错、且不得把裸错误泄漏到 CGI stderr（BLK-3 / N-B） ===========
+  [OK]   写失败时界面如实提示『设置写入失败』
+  [OK]   写失败时未出现『已保存』文案
+  [OK]   CGI stderr 无泄漏
+  [OK]   失败时旧设置未被破坏
+  [OK]   对照组 -5：确实谎报『设置已保存』
+  [OK]   对照组 -5：确实泄漏 stderr（/tmp/repro-486288/r3/ui/legacy5.cgi: line 147: /tmp/repro-486288/r3/shares/openp2p/settings.conf: Permission denied）
+
+=========== R4 find_all_pids 不得认领 argv0 伪装进程（P2-4 / B5 同类） ===========
+  BIN=/tmp/repro-486288/r4/shares/openp2p/openp2p（已放置可执行文件，inode 1853706）
+  伪装进程 pid=486668  argv0=/tmp/repro-486288/r4/shares/openp2p/openp2p  exe=/tmp/repro-486288/fake-sleep
+  find_all_pids 返回：[]
+  [OK]   -6 拒绝认领 argv0 伪装进程
+  对照 -4 find_all_pids 返回：[486793]
+  [OK]   对照组 -4：认领了伪装进程 → 证明本用例有鉴别力
+
+=========== R5 符号链接数据目录：is_our_pid 必须为真（B11 真机根因） ===========
+  进程 pid=486894  /proc/486894/exe = /tmp/repro-486288/r5/real/openp2p
+  is_our_pid → TRUE
+  [OK]   符号链接场景下 -6 认得自己启动的进程
+  对照 -1：is_our_pid → FALSE
+  [OK]   对照组 -1：符号链接下 is_our_pid 恒假 → 真机重复实例的根因复现
+
+=========== R6 日志不可写时启动不得泄漏裸错误（N-D） ===========
+  start rc=0  stderr=0 字节  pid_file=487097
+  [OK]   日志不可写时启动无 stderr 泄漏
+  [OK]   日志不可写时依然成功启动（进程输出退回 /dev/null）
+
+=========== 复现集汇总：OK=17  BAD=0 ===========

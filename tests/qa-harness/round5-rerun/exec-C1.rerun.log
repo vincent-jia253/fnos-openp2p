@@ -1,0 +1,30 @@
+=========== TC-19 uninstall_init 停进程但保留数据 (R6,R3) ===========
+  uninstall_init rc=0
+  [PASS] 进程已停止
+  [PASS] settings.conf 保留
+  [PASS] settings.conf 内容未变
+  [PASS] config.json 保留
+  [PASS] log/ 保留
+=========== TC-20 uninstall_callback 删除数据分支 (R6) ===========
+  uninstall_callback(delete) rc=0
+  [PASS] 选择删除时 DATA_DIR 已清理
+  [PASS] 无进程残留
+=========== TC-20b uninstall_callback 保留数据分支 (R6,R3) ===========
+  uninstall_callback(keep) rc=0
+  [PASS] 选择保留时数据仍在
+=========== TC-21 日志可诊断且不含 Token (R8,I5) ===========
+  [PASS] LOG_FILE 存在且非空
+  [PASS] 含启动信息
+  [PASS] 含停止信息
+  [PASS] 日志中 Token 出现 0 次
+=========== TC-22 非法 token/node 被拒绝且有提示 (校验契约) ===========
+  config_callback(非法token) rc=0
+  status rc=0（B8 后允许为 0；关键在于下面的『未写入/未传递』断言）
+  [PASS] 非法 token 未写入 settings.conf
+  [PASS] 非法 token 未传给 openp2p（config.json 中无此值）
+  [PASS] 日志有拒绝提示
+  [PASS] 用户可见提示（TRIM_TEMP_LOGFILE）已写入
+  [PASS] 非法 node 未写入配置（已回退）
+  [PASS] node 拒绝提示已记录
+
+=========== 块 C1 汇总：PASS=18  FAIL=0 ===========

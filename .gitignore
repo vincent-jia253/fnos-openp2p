@@ -1,0 +1,18 @@
+# ---- 构建产物 ----
+dist/
+build_tmp/
+*.fpk
+
+# ---- 调研资料（第三方包 / 解包产物，体积大，不属于本仓库内容）----
+research/
+
+# ---- 运行时产物 ----
+# 本地直接跑 app/bin/openp2p_* 会在二进制旁边写日志
+src/openp2p/app/bin/log/
+log/
+
+# ---- 杂项 ----
+*.bak
+*.orig
+*.rej
+.DS_Store

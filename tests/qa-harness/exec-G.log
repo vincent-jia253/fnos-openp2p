@@ -1,0 +1,53 @@
+被测源码: /vol4/@appshare/octop-native/data/.octop/agents/ZD3XW7/projects/fnos-openp2p/src/openp2p
+包 md5  : 6898fc7f073c0ab8699eee5299916aec（二进制来源）
+
+=========== G0 前置确认：被测布局确实是符号链接形态 ===========
+  [PASS] DATA_DIR（shares/openp2p）是符号链接
+  [PASS] 符号链接解析到 /tmp/qaG-realdata
+
+=========== G1 符号链接数据目录下：start → status 必须报「运行中」（B11 核心） ===========
+  [PASS] start rc=0
+  [PASS] status rc=0（运行中）
+  [PASS] 进程数=1
+
+=========== G2 符号链接下重复 start → 不得产生第二个实例（B11 真机 3 实例的直接原因） ===========
+  [PASS] 连续 4 次 start 后仍只有 1 个进程
+  [PASS] 日志出现『已在运行，跳过启动』
+
+=========== G3 符号链接下 stop → 必须真的停掉，且 status 归 3 ===========
+  [PASS] stop rc=0（不谎报）
+  [PASS] 无残留进程
+  [PASS] status rc=3（未运行）
+
+=========== G4 PID 文件丢失 → status/start 必须靠进程探测自愈（B10） ===========
+  [PASS] PID 文件缺失时 status 仍报运行中
+  [PASS] PID 文件已被自动修复重建
+  [PASS] PID 文件缺失后再次 start 不起新实例
+
+=========== G5 多实例残留 → stop 必须【全部】清理（B12） ===========
+  [PASS] 已构造出 2 个实例（前置条件成立）
+  [PASS] stop rc=0
+  [PASS] 全部实例已清理（旧代码只杀一个，另一个继续占端口）
+
+=========== G6 升级场景：二进制被替换后，旧进程 exe 带 (deleted) 仍应被认领（B13） ===========
+  [PASS] 旧实例已启动
+  [PASS] 二进制被替换后 status 仍报运行中（认领 (deleted) 旧进程）
+  [PASS] 升级后 start 不产生新实例（先停旧再启由 config/升级流程负责）
+  [PASS] stop rc=0（能停掉 (deleted) 旧进程）
+  [PASS] 无残留
+
+=========== G7 隔离性：不得认领/误杀另一份也叫 openp2p 的程序（B9） ===========
+  [PASS] 前置：另一份 openp2p 正在运行 (pid=473110)
+  [PASS] 本应用未运行时 status 不被『同名进程』带成运行中
+  [PASS] stop 未误杀另一份 openp2p（进程仍在）
+  [PASS] 前置：已造出 argv0 伪装进程 (pid=473521)
+  [PASS] stop 未误杀 argv0 伪装进程（P2-4 已修）
+
+=========== G8 界面 running_pid 与 cmd/common 判据一致（界面不再自造一套） ===========
+  [PASS] index.cgi 的 running_pid 复用 cmd/common 的 is_running
+  [PASS] index.cgi 已无 kill -0/pidof 判活
+
+=========== G9 对照组自我验证：Legacy 3.25.11-1 代码必须在本用例上失败 ===========
+  [PASS] 旧代码复现重复实例（4 个）——证明本用例确实能抓 B11
+
+=========== 块 G 汇总：PASS=29  FAIL=0 ===========

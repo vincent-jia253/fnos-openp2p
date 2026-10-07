@@ -1,0 +1,50 @@
+[
+    {
+        "stepTitle": "OpenP2P 初始配置",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "<b>Token 从哪来？</b>打开 <a href=\"https://console.openp2p.cn\" target=\"_blank\">console.openp2p.cn</a> 注册账号 → 「个人资料 / Profile」→ 复制 <b>Token</b>（纯数字）。<br>留空也可以：应用仍会正常启动，进入应用界面填写 Token 并保存即可生效（此时才会登录组网）。"
+            },
+            {
+                "type": "password",
+                "field": "openp2p_token",
+                "label": "Token（留空可稍后填写）",
+                "initValue": "",
+                "rules": [
+                    {
+                        "pattern": "^[0-9]*$",
+                        "message": "Token 是一串数字，请只填写数字"
+                    }
+                ],
+                "helpText": "纯数字，例如 123456"
+            },
+            {
+                "type": "text",
+                "field": "openp2p_node",
+                "label": "本机节点名",
+                "initValue": "",
+                "rules": [
+                    {
+                        "pattern": "^[A-Za-z0-9_-]{0,31}$",
+                        "message": "只能包含字母、数字、- 和 _，且不超过 31 位"
+                    }
+                ],
+                "helpText": "在 P2P 网络中的唯一标识，1-31 位字母/数字/-/_。留空则自动使用 NAS 主机名"
+            },
+            {
+                "type": "text",
+                "field": "openp2p_sharebandwidth",
+                "label": "共享带宽上限 (Mbps)",
+                "initValue": "10",
+                "rules": [
+                    {
+                        "pattern": "^(|[0-9]|[1-9][0-9]{1,4}|100000)$",
+                        "message": "请输入 0-100000 之间的整数"
+                    }
+                ],
+                "helpText": "作为共享节点对外提供的带宽上限。填 0 表示不加入共享网络（也意味着无法使用他人共享节点做中继）"
+            }
+        ]
+    }
+]

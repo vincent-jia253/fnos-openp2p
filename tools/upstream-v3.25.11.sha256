@@ -1,0 +1,7 @@
+# 上游 openp2p v3.25.11 官方发布资产（GitHub Release）
+# 用途：tools/fetch-upstream.sh 下载 + 校验后才落盘到 src/openp2p/app/bin/
+# 格式：<资产包 sha256>  <解包后 openp2p 二进制 sha256>  <上游资产名>  <本仓库目标文件名>
+cd53825feba1ee489f2046427178c76b1ba6fc71a7cc32f3700f2ddeeb4d9e36  6fbd7772e8a82299ba77bf3505de2ebc6b8be8ff9083eb3197101bb5fbba4b44  openp2p-3.25.11.linux-amd64.tar.gz  openp2p_x86_64
+c3e25450c4d8f12138e81f979cf3df34843e2c9476145a477e42bc5f75f2e0ea  0fd0a94f21b4cbb82d9e0a3e405d05c375d10bdec8341dba66e129c019966ae6  openp2p-3.25.11.linux-arm64.tar.gz  openp2p_aarch64
+e6f8e181d6efba4df15b8f61d866f9147403978c09c23c0f562a8e1471ca3f95  faf48c4cadcb041358ba0e8ed9c90c66dddf7773ca21ce38052056ca98cddb8c  openp2p-3.25.11.linux-arm.tar.gz    openp2p_armv7
+41adc5acc41f46869cabc874211cf310042be9640827aa8d9bfd991b49405629  6fb6112d244ed623c556db1b13ebb1ebc8173ed7b1def461ddaebd108a3a8127  openp2p-3.25.11.linux-386.tar.gz    openp2p_i386

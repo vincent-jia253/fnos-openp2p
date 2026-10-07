@@ -1,0 +1,30 @@
+第三方组件与出处
+================
+
+## 1. openp2p（上游，MIT）
+
+- 项目：https://github.com/openp2p-cn/openp2p
+- 许可证：MIT License（见上游仓库 `LICENSE`）
+- 版权：Copyright (c) openp2p-cn
+- 本仓库封装的是上游 **v3.25.11** 的官方发布物，未对二进制做任何修改。
+
+## 2. 随仓库分发的四个可执行文件
+
+本仓库的 `src/openp2p/app/bin/` 内含四个 **上游官方构建** 的 Linux 可执行文件，
+逐字节取自 v3.25.11 的 GitHub Release 资产（未经重新编译、未打补丁）：
+
+| 本仓库文件 | 上游资产 | md5 |
+|---|---|---|
+| `openp2p_x86_64` | `openp2p-3.25.11.linux-amd64.tar.gz` | `150c30a425f3f80582ae596bd474b18a` |
+| `openp2p_aarch64` | `openp2p-3.25.11.linux-arm64.tar.gz` | `802ff9a39d88327db6e854c26b6adcb3` |
+| `openp2p_armv7`   | `openp2p-3.25.11.linux-arm.tar.gz`   | `4afa700df8b0612696a00ab5161b68a0` |
+| `openp2p_i386`    | `openp2p-3.25.11.linux-386.tar.gz`   | `d658d53adf93f87ceab2ec20282f14fc` |
+
+上述哈希可用 `tools/fetch-upstream.sh` 一键复算（脚本会重新下载上游资产并校验；
+不匹配即报错退出）。sha256 见 `tools/upstream-v3.25.11.sha256`。
+
+## 3. 商标与免责
+
+- 「openp2p」相关名称与标识归其作者所有；本仓库是**第三方封装**，与上游无隶属关系，
+  也未获得其背书。上游问题请提到 openp2p 仓库，本封装（打包脚本 / fnOS 集成 / UI）的问题请提到本仓库。
+- 「飞牛」「fnOS」为其各自权利人商标，此处仅为说明适配对象。
